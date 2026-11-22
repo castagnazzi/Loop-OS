@@ -39,9 +39,11 @@ void fb_cursor_show(void);
  * Returns the y coordinate where free drawing space starts. */
 int fb_draw_boot_screen(void);
 
-/* Text console inside a rectangle of the screen. Each character cell is
- * 'cell_px' x 'cell_px' pixels (the 8x8 font stretched, e.g. 12). Handles \n \r \t \b, wraps lines and scrolls. */
-void fbcon_init(int x, int y, int w, int h, int cell_px, uint32_t fg, uint32_t bg);
+/* Text console inside a rectangle of the screen. Characters are 'cell_px'
+ * pixels wide and tall (the 8x8 font; 8 draws it 1:1, other sizes stretch it)
+ * and lines are 'line_px' tall, so line_px > cell_px adds spacing between
+ * lines. Handles \n \r \t \b, wraps lines and scrolls. */
+void fbcon_init(int x, int y, int w, int h, int cell_px, int line_px, uint32_t fg, uint32_t bg);
 void fbcon_putc(char c);
 void fbcon_clear(void);
 

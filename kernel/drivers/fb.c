@@ -7,6 +7,7 @@
 #include <kernel/string.h>
 #include <stdint.h>
 #include "font8x8.h"
+#include "logo.h"
 
 /* ------------------------------------------------------------------ */
 /* Framebuffer state */
@@ -222,19 +223,31 @@ void fb_draw_string(int x, int y, const char *s, uint32_t fg, uint32_t bg, int s
 /* ------------------------------------------------------------------ */
 /* Boot screen */
 
-/* Placeholder logo: a ring with a dot in the middle, inside a 28x28 box whose
- * top-left corner is (x, y). Replace this function with your own artwork. */
+/* Title bar colour; the logo is alpha-blended over it */
+#define BAR_R 24
+#define BAR_G 28
+#define BAR_B 44
+#define BAR_HEIGHT 56
+
+/* Draw the logo (kernel/drivers/logo.h, made by tools/gen_logo.py) with its
+ * top-left corner at (x, y). */
 static void draw_logo(int x, int y) {
-    const int r = 14, cx = x + r, cy = y + r;
-    uint32_t ring = fb_rgb(80, 160, 255), dot = fb_rgb(240, 245, 255);
-    for (int dy = -r; dy <= r; dy++) {
-        for (int dx = -r; dx <= r; dx++) {
-            int d2 = dx * dx + dy * dy;
-            if (d2 <= 13 * 13 && d2 >= 9 * 9) fb_putpixel(cx + dx, cy + dy, ring);
-            else if (d2 <= 4 * 4) fb_putpixel(cx + dx, cy + dy, dot);
+    for (int j = 0; j < LOGO_H; j++) {
+        for (int i = 0; i < LOGO_W; i++) {
+            uint32_t p = logo_argb[j * LOGO_W + i];
+            unsigned a = p >> 24;
+            if (a == 0) continue;
+            unsigned r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+            if (a < 255) {
+                r = (r * a + BAR_R * (255 - a)) / 255;
+                g = (g * a + BAR_G * (255 - a)) / 255;
+                b = (b * a + BAR_B * (255 - a)) / 255;
+            }
+            fb_putpixel(x + i, y + j, fb_rgb((uint8_t)r, (uint8_t)g, (uint8_t)b));
         }
     }
 }
+
 int fb_draw_boot_screen(void) {
     if (!fb_base) return 0;
 
@@ -246,14 +259,16 @@ int fb_draw_boot_screen(void) {
     }
 
     /* Title bar */
-    const int bar_h = 56;
-    fb_fill_rect(0, 0, (int)fb_w, bar_h, fb_rgb(24, 28, 44));
+    const int bar_h = BAR_HEIGHT;
+    fb_fill_rect(0, 0, (int)fb_w, bar_h, fb_rgb(BAR_R, BAR_G, BAR_B));
     fb_fill_rect(0, bar_h, (int)fb_w, 3, fb_rgb(80, 160, 255));
 
-    draw_logo(16, 14);
+    const int logo_x = 14;
+    draw_logo(logo_x, (bar_h - LOGO_H) / 2);
+    const int text_x = logo_x + LOGO_W + 12;
 
-    fb_draw_string(60, 12, "Loop-OS", fb_rgb(240, 245, 255), FB_TRANSPARENT, 3);
-    fb_draw_string(60, 38, "x86_64 kernel - boot log", fb_rgb(150, 170, 200), FB_TRANSPARENT, 1);
+    fb_draw_string(text_x, 12, "Loop-OS", fb_rgb(240, 245, 255), FB_TRANSPARENT, 3);
+    fb_draw_string(text_x, 38, "x86_64 kernel - boot log", fb_rgb(150, 170, 200), FB_TRANSPARENT, 1);
 
     return bar_h + 3;
 }
@@ -261,20 +276,23 @@ int fb_draw_boot_screen(void) {
 /* ------------------------------------------------------------------ */
 /* Text console */
 static int con_x, con_y, con_w, con_h;     /* viewport in pixels */
-static int con_cell = 8;                   /* character cell size in pixels */
+static int con_cell = 8;                   /* glyph size = character width, pixels */
+static int con_line = 8;                   /* line height, pixels (>= glyph size) */
 static int con_cols, con_rows;
 static int con_cx, con_cy;                 /* cursor in cells */
 static uint32_t con_fg, con_bg;
 static int con_ready = 0;
 
-void fbcon_init(int x, int y, int w, int h, int cell_px, uint32_t fg, uint32_t bg) {
+void fbcon_init(int x, int y, int w, int h, int cell_px, int line_px, uint32_t fg, uint32_t bg) {
     if (!fb_base) return;
     if (cell_px < 8) cell_px = 8;
+    if (line_px < cell_px) line_px = cell_px;
     con_x = x; con_y = y; con_w = w; con_h = h;
     con_cell = cell_px;
+    con_line = line_px;
     con_fg = fg; con_bg = bg;
     con_cols = w / cell_px;
-    con_rows = h / cell_px;
+    con_rows = h / line_px;
     con_cx = con_cy = 0;
     if (con_cols < 1 || con_rows < 1) return;
     fb_fill_rect(con_x, con_y, con_w, con_h, con_bg);
@@ -288,22 +306,22 @@ void fbcon_clear(void) {
 }
 
 static void con_scroll(void) {
-    int cell = con_cell;
-    int move_rows = (con_rows - 1) * cell;
+    int move_rows = (con_rows - 1) * con_line;
+    int width_px = con_cols * con_cell;
 
     /* Raw copy below: keep the cursor (and its saved pixels) out of the way */
     uint64_t f = interrupts_save();
-    int redraw = cursor_overlaps(con_x, con_y, con_cols * cell, con_rows * cell);
+    int redraw = cursor_overlaps(con_x, con_y, width_px, con_rows * con_line);
     if (redraw) cursor_erase();
     for (int j = 0; j < move_rows; j++) {
         uint32_t *dst = row_ptr(con_y + j) + con_x;
-        uint32_t *src = row_ptr(con_y + j + cell) + con_x;
-        memmove(dst, src, (size_t)con_cols * cell * sizeof(uint32_t));
+        uint32_t *src = row_ptr(con_y + j + con_line) + con_x;
+        memmove(dst, src, (size_t)width_px * sizeof(uint32_t));
     }
     if (redraw) cursor_draw();
     interrupts_restore(f);
 
-    fb_fill_rect(con_x, con_y + move_rows, con_cols * cell, cell, con_bg);
+    fb_fill_rect(con_x, con_y + move_rows, width_px, con_line, con_bg);
 }
 
 static void con_newline(void) {
@@ -314,9 +332,12 @@ static void con_newline(void) {
     }
 }
 
+static void con_erase_cell(int cx, int cy) {
+    fb_fill_rect(con_x + cx * con_cell, con_y + cy * con_line, con_cell, con_line, con_bg);
+}
+
 void fbcon_putc(char c) {
     if (!con_ready) return;
-    int cell = con_cell;
 
     switch (c) {
     case '\n':
@@ -328,7 +349,7 @@ void fbcon_putc(char c) {
     case '\t': {
         int next = (con_cx + 8) & ~7;
         while (con_cx < next && con_cx < con_cols) {
-            fb_fill_rect(con_x + con_cx * cell, con_y + con_cy * cell, cell, cell, con_bg);
+            con_erase_cell(con_cx, con_cy);
             con_cx++;
         }
         if (con_cx >= con_cols) con_newline();
@@ -337,7 +358,7 @@ void fbcon_putc(char c) {
     case '\b':
         if (con_cx > 0) {
             con_cx--;
-            fb_fill_rect(con_x + con_cx * cell, con_y + con_cy * cell, cell, cell, con_bg);
+            con_erase_cell(con_cx, con_cy);
         }
         return;
     default:
@@ -345,6 +366,6 @@ void fbcon_putc(char c) {
     }
 
     if (con_cx >= con_cols) con_newline();
-    fb_draw_glyph(con_x + con_cx * cell, con_y + con_cy * cell, c, con_fg, con_bg, cell);
+    fb_draw_glyph(con_x + con_cx * con_cell, con_y + con_cy * con_line, c, con_fg, con_bg, con_cell);
     con_cx++;
 }
