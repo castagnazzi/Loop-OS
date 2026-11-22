@@ -21,6 +21,7 @@
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/fs/initrd.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/blk.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/drivers/keyboard.h>
 
@@ -106,6 +107,7 @@ static void init_initrd(void) {
     kprintf("initrd: %s, %lu bytes, %d entries\n", mod->path,
             (unsigned long)mod->size, n);
     vfs_init();
+    storage_init();
 }
 
 /* ---------------------------------------------------------------- */

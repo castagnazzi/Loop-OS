@@ -32,8 +32,16 @@ void vfs_canonical(const char *in, char *out, size_t out_max) {
     initrd_canonical(in, out, out_max);   /* same normalisation rules */
 }
 
+static void populate(struct vnode *dir) {
+    if (dir->ops && dir->ops->populate && !dir->populated) {
+        dir->populated = 1;
+        dir->ops->populate(dir);
+    }
+}
+
 /* Look up one name in a directory */
 static struct vnode *find_child(struct vnode *dir, const char *name, size_t len) {
+    populate(dir);
     for (struct vnode *c = dir->child; c; c = c->next) {
         if (strlen(c->name) == len && strncmp(c->name, name, len) == 0) return c;
     }
@@ -73,7 +81,7 @@ struct vnode *vfs_create(const char *path, int is_dir) {
     vfs_canonical(path, canon, sizeof(canon));
     const char *last;
     struct vnode *parent = walk(canon, &last, 1);
-    if (!parent || !parent->is_dir || !*last) return NULL;
+    if (!parent || !parent->is_dir || !*last || parent->ops) return NULL;
     size_t len = strlen(last);
     if (len >= VFS_NAME_MAX || find_child(parent, last, len)) return NULL;
 
@@ -91,6 +99,7 @@ int vfs_unlink(const char *path) {
     struct vnode *n = vfs_lookup(path);
     if (!n) return -ENOENT;
     if (n == root) return -EBUSY;
+    if (n->ops || (n->parent && n->parent->ops)) return -30;      /* read-only filesystem */
     if (n->is_dir && n->child) return -ENOTEMPTY;
     struct vnode **pp = &n->parent->child;
     while (*pp && *pp != n) pp = &(*pp)->next;
@@ -124,6 +133,7 @@ static int reserve(struct vnode *n, size_t need) {
 }
 
 long vfs_read(struct vnode *n, size_t off, void *buf, size_t count) {
+    if (n->ops && n->ops->read) return n->ops->read(n, off, buf, count);
     if (n->is_dir || off >= n->size) return 0;
     size_t left = n->size - off;
     if (count > left) count = left;
@@ -133,6 +143,7 @@ long vfs_read(struct vnode *n, size_t off, void *buf, size_t count) {
 
 long vfs_write(struct vnode *n, size_t off, const void *buf, size_t count) {
     if (n->is_dir) return -EINVAL;
+    if (n->ops) return -13;                    /* read-only filesystem */
     if (off > n->size) {                       /* sparse gap reads as zeros */
         if (reserve(n, off) != 0) return -12;
         memset(n->data + n->size, 0, off - n->size);
@@ -145,14 +156,39 @@ long vfs_write(struct vnode *n, size_t off, const void *buf, size_t count) {
 }
 
 void vfs_truncate(struct vnode *n) {
+    if (n->ops) return;
     n->size = 0;
 }
 
 struct vnode *vfs_entry_at(struct vnode *dir, size_t index) {
     if (!dir || !dir->is_dir) return NULL;
+    populate(dir);
     struct vnode *c = dir->child;
     while (c && index--) c = c->next;
     return c;
+}
+
+struct vnode *vfs_add_node(struct vnode *dir, const char *name, int is_dir, size_t size,
+                           const struct vnode_ops *ops, void *priv) {
+    struct vnode *n = node_new(name, is_dir);
+    if (!n) return NULL;
+    n->size = size;
+    n->ops = ops;
+    n->priv = priv;
+    n->parent = dir;
+    struct vnode **pp = &dir->child;
+    while (*pp) pp = &(*pp)->next;
+    *pp = n;
+    return n;
+}
+
+struct vnode *vfs_mount(const char *path, const struct vnode_ops *ops, void *priv) {
+    if (!vfs_lookup("/mnt")) vfs_create("/mnt", 1);
+    struct vnode *n = vfs_create(path, 1);
+    if (!n) return NULL;
+    n->ops = ops;
+    n->priv = priv;
+    return n;
 }
 
 /* ---------------------------------------------------------------- */

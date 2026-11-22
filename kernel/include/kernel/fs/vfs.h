@@ -11,6 +11,14 @@
 
 #define VFS_NAME_MAX 48
 
+struct vnode;
+
+/* Hooks for nodes that live on a real filesystem (read-only for now) */
+struct vnode_ops {
+    long (*read)(struct vnode *n, size_t off, void *buf, size_t count);   /* files */
+    int (*populate)(struct vnode *dir);                                   /* directories */
+};
+
 struct vnode {
     char name[VFS_NAME_MAX];
     int is_dir;
@@ -19,7 +27,17 @@ struct vnode {
     int refs;                  /* open file descriptors */
     int unlinked;              /* removed from the tree, freed on last close */
     struct vnode *parent, *child, *next;
+    const struct vnode_ops *ops;   /* non-NULL: backed by a filesystem driver */
+    void *priv;
+    int populated;                 /* ops directories: children have been listed */
 };
+
+/* Add a child that a filesystem driver found (no checks, read-only). */
+struct vnode *vfs_add_node(struct vnode *dir, const char *name, int is_dir, size_t size,
+                           const struct vnode_ops *ops, void *priv);
+/* Create the directory 'path' (and /mnt if needed) as the root of a
+ * filesystem. Returns it, or NULL. */
+struct vnode *vfs_mount(const char *path, const struct vnode_ops *ops, void *priv);
 
 /* Copy the initrd into the tree. Call after initrd_init(). */
 void vfs_init(void);

@@ -162,10 +162,10 @@ no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 
 ## 🚀 Fases de Desenvolvimento
 
-### **Fase 0 — Toolchain & Build System** ✅ *Iniciar aqui*
-- [ ] Cross-compiler GCC/Clang para x86_64-elf (musl)
+### **Fase 0 — Toolchain & Build System** ✅
+- [x] Cross-compiler GCC/Clang para x86_64-elf (musl) (GCC 14 + binutils, sem musl)
 - [ ] CMake toolchain file
-- [ ] Makefile principal com targets: `kernel`, `userspace`, `iso`, `run`, `debug`
+- [x] Makefile principal com targets: `kernel`, `userspace`, `iso`, `run`, `debug`
 - [ ] Dockerfile para build reprodutível
 - [ ] CI GitHub Actions (build + test básico)
 - [ ] Scripts QEMU (run, debug com GDB)
@@ -174,64 +174,64 @@ no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 
 ---
 
-### **Fase 1 — Kernel Core** 🔲
-- [ ] Entry point Limine (boot.S) → C kernel_main
-- [ ] GDT, IDT, ISR/IRQ handlers
-- [ ] Paging (4-level, higher-half kernel, recursive mapping)
-- [ ] Physical Memory Manager (bitmap/frame allocator)
-- [ ] Virtual Memory Manager (map/unmap, kernel heap)
-- [ ] Kernel heap (bump allocator → slab)
-- [ ] Timer (PIT → HPET/TSC), ticks, sleep/usleep
-- [ ] Serial logging (COM1), panic handler, stack trace
-- [ ] Interrupt-driven keyboard (PS/2) básico
+### **Fase 1 — Kernel Core** ✅
+- [x] Entry point Limine (boot.S) → C kernel_main
+- [x] GDT, IDT, ISR/IRQ handlers
+- [x] Paging (4-level, higher-half kernel, recursive mapping)
+- [x] Physical Memory Manager (bitmap/frame allocator)
+- [x] Virtual Memory Manager (map/unmap, kernel heap)
+- [x] Kernel heap (bump allocator → slab)
+- [x] Timer (PIT → HPET/TSC), ticks, sleep/usleep
+- [x] Serial logging (COM1), panic handler, stack trace
+- [x] Interrupt-driven keyboard (PS/2) básico
 
 **Entregável**: Kernel boota, mostra log no serial, gerencia memória, trata interrupções.
 
 ---
 
-### **Fase 2 — Drivers & Filesystem** 🔲
-- [ ] Framebuffer driver (Linear framebuffer via Limine/UEFI GOP)
+### **Fase 2 — Drivers & Filesystem** 🔶 em andamento
+- [x] Framebuffer driver (Linear framebuffer via Limine/UEFI GOP) (24 e 32 bpp)
 - [ ] PCI enumeration, BAR mapping
-- [ ] PS/2 mouse + USB HID (teclado/mouse)
-- [ ] VFS layer (mount, open/read/write/close, opendir/readdir)
-- [ ] FAT32 driver (boot partition, USB)
+- [x] PS/2 mouse + USB HID (teclado/mouse) (PS/2 pronto; USB pendente)
+- [x] VFS layer (mount, open/read/write/close, opendir/readdir) (ramfs gravável + montagem de FS reais)
+- [x] FAT32 driver (boot partition, USB) (somente leitura, em teste; driver de disco ATA e partições MBR/GPT prontos)
 - [ ] ext2/ext3 driver (root partition)
-- [ ] Ramfs/tmpfs para /dev, /run, /tmp
+- [x] Ramfs/tmpfs para /dev, /run, /tmp (`/tmp` pronto; /dev e /run pendentes)
 - [ ] Device nodes (/dev/fb0, /dev/kbd, /dev/mouse, /dev/null, /dev/zero)
 
 **Entregável**: Kernel monta partitions, lê arquivos, framebuffer funcional, input funcional.
 
 ---
 
-### **Fase 3 — Userspace Básico** 🔲
-- [ ] Syscall infrastructure (sysenter/syscall, sysret/iretq)
-- [ ] Process/thread creation (fork, execve, exit, wait)
-- [ ] ELF loader (userspace binaries)
-- [ ] Minimal libc (musl fork ou nova: syscalls, malloc, string, stdio, pthread)
-- [ ] Init (PID 1): monta fs, lança getty/login, inicia WM
-- [ ] Shell básico (builtins: cd, ls, cat, echo, export, exec)
-- [ ] Userspace heap, mmap, brk
+### **Fase 3 — Userspace Básico** ✅
+- [x] Syscall infrastructure (sysenter/syscall, sysret/iretq)
+- [x] Process/thread creation (fork, execve, exit, wait)
+- [x] ELF loader (userspace binaries)
+- [ ] Minimal libc (musl fork ou nova: syscalls, malloc, string, stdio, pthread) — `ulib` mínima pronta (syscalls, string, printf)
+- [x] Init (PID 1): monta fs, lança getty/login, inicia WM
+- [x] Shell básico (builtins: cd, ls, cat, echo, export, exec)
+- [x] Userspace heap, mmap, brk (sbrk pronto; mmap pendente)
 
 **Entregável**: Boota para shell interativo no framebuffer com teclado.
 
 ---
 
-### **Fase 4 — Graphics Stack & Window Manager** 🔲
-- [ ] libgui: janelas, widgets (button, label, input, scroll), layout (flex/grid)
+### **Fase 4 — Graphics Stack & Window Manager** 🔶 funcionando, faltam itens
+- [x] libgui: janelas, widgets (button, label, input, scroll), layout (flex/grid) (básico: janela, texto, botão)
 - [ ] Font rendering (stb_truetype ou FreeType minimal)
-- [ ] Compositor: double/triple buffer, damage tracking, vsync
-- [ ] WM: protocolo IPC (shared memory + event ring buffer)
+- [x] Compositor: double/triple buffer, damage tracking, vsync (back buffer + damage tracking; sem vsync)
+- [x] WM: protocolo IPC (shared memory + event ring buffer) (syscalls + fila de eventos)
 - [ ] Window management: tiling (master/stack), floating, workspaces
-- [ ] Decorações: título, botões (close/max/min), resize handles
-- [ ] Input routing: focus follows mouse, click-to-focus, keybindings
+- [x] Decorações: título, botões (close/max/min), resize handles (título, fechar e minimizar; sem maximizar/resize)
+- [x] Input routing: focus follows mouse, click-to-focus, keybindings (click-to-focus)
 
 **Entregável**: WM roda, abre janelas, redimensiona, troca workspaces, compositor vsync.
 
 ---
 
-### **Fase 5 — Desktop Environment** 🔲
-- [ ] Panel: clock, system tray, workspace switcher, app menu button
-- [ ] Application launcher (menu estilo start / rofi-like)
+### **Fase 5 — Desktop Environment** 🔶 iniciada
+- [x] Panel: clock, system tray, workspace switcher, app menu button (relógio e botão do menu; sem tray)
+- [x] Application launcher (menu estilo start / rofi-like) (menu Iniciar configurável em `/etc/menu`)
 - [ ] Desktop icons: grid, drag-drop, context menu
 - [ ] Notifications daemon (toast, persistência, ações)
 - [ ] Settings: wallpaper, theme, keybindings, network, display
@@ -242,14 +242,14 @@ no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 
 ---
 
-### **Fase 6 — Aplicações Core** 🔲
+### **Fase 6 — Aplicações Core** 🔶 versões básicas prontas
 | App | Features Mínimas |
 |-----|------------------|
 | **File Manager** | Tree view, list/icon view, copy/move/delete/rename, mime types, bookmarks, address bar, thumbnails |
 | **Image Viewer** | Zoom/pan, fit/window, next/prev, slideshow, EXIF, formatos: PNG, JPEG, BMP, GIF, WebP |
 | **Text Editor** | Syntax highlight, line numbers, tabs, search/replace, undo/redo, encoding, large files |
 
-- [ ] Cada app como binário ELF independente
+- [x] Cada app como binário ELF independente (term, notepad, files, calc, taskmgr)
 - [ ] Integração com WM (ícones, mime, atalhos)
 - [ ] Thumbnailer background service
 
