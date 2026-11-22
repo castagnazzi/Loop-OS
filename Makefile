@@ -128,6 +128,7 @@ initrd:
 	@$(RM) $(ROOTFS_DIR)
 	@$(MKDIR) $(ROOTFS_DIR)
 	@$(CP) $(ROOTFS_SRC)/. $(ROOTFS_DIR)/
+	@$(MAKE) -C $(USERSPACE_DIR) install ROOTFS=$(abspath $(ROOTFS_DIR))
 	@tar --format=ustar -cf $(INITRD) -C $(ROOTFS_DIR) .
 	@echo "Initrd: $(INITRD)"
 

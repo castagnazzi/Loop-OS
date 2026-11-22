@@ -39,6 +39,15 @@ void gdt_init(void);
 /* Load GDT and TSS */
 void gdt_load(void);
 
+/* Stack the CPU switches to on a ring 3 -> ring 0 transition (TSS.rsp0) */
+void gdt_set_kernel_stack(uint64_t rsp0);
+
+/* Segment selectors */
+#define GDT_KERNEL_CODE 0x08
+#define GDT_KERNEL_DATA 0x10
+#define GDT_USER_DATA   0x18
+#define GDT_USER_CODE   0x20
+
 /* Set kernel stack for IST (Interrupt Stack Table) */
 void gdt_set_ist_stack(size_t ist_index, void *stack_top);
 

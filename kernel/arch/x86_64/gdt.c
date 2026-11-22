@@ -5,7 +5,8 @@
 #include <kernel/string.h>
 #include <stdint.h>
 
-/* GDT entries (max 8 for now: null, kernel code, kernel data, user code, user data, TSS x2) */
+/* GDT layout: 0 null, 1 kernel code (0x08), 2 kernel data (0x10),
+ * 3 user data (0x18), 4 user code (0x20), 5-6 TSS (0x28) */
 static struct gdt_entry gdt[8];
 static struct gdt_ptr gdt_ptr;
 static struct tss tss;
@@ -54,12 +55,13 @@ void gdt_init(void) {
     /* Kernel data segment */
     gdt_set_entry(2, 0, 0xFFFFFFFF, 0x92, 0xA0);  /* Present, DPL=0, Data, Read/Write */
     
-    /* User code segment (64-bit) */
-    gdt_set_entry(3, 0, 0xFFFFFFFF, 0xFA, 0xA0);  /* Present, DPL=3, Code, Read/Exec, 64-bit */
-    
-    /* User data segment */
-    gdt_set_entry(4, 0, 0xFFFFFFFF, 0xF2, 0xA0);  /* Present, DPL=3, Data, Read/Write */
-    
+    /* User data segment (0x18). SYSRET loads SS from STAR[63:48]+8 and
+     * CS from STAR[63:48]+16, so user data must come before user code. */
+    gdt_set_entry(3, 0, 0xFFFFFFFF, 0xF2, 0xA0);  /* Present, DPL=3, Data, Read/Write */
+
+    /* User code segment, 64-bit (0x20) */
+    gdt_set_entry(4, 0, 0xFFFFFFFF, 0xFA, 0xA0);  /* Present, DPL=3, Code, Read/Exec, 64-bit */
+
     /* TSS (uses entries 5 and 6) */
     memset(&tss, 0, sizeof(tss));
     tss.iomap_base = sizeof(tss);   /* no I/O permission bitmap */
@@ -103,4 +105,8 @@ void gdt_load(void) {
 void gdt_set_ist_stack(size_t ist_index, void *stack_top) {
     if (ist_index >= 7) return;
     tss.ist[ist_index] = (uint64_t)stack_top;
+}
+
+void gdt_set_kernel_stack(uint64_t rsp0) {
+    tss.rsp[0] = rsp0;
 }

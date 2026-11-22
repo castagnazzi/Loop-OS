@@ -65,57 +65,6 @@ ISR_STUB 29, 0  /* VMM communication exception */
 ISR_STUB 30, 1  /* Security exception */
 ISR_STUB 31, 0  /* Reserved */
 
-/* Syscall entry (vector 0x80) */
-.global syscall_stub
-.type syscall_stub, @function
-.align 16
-syscall_stub:
-    /* Save user registers */
-    swapgs
-    movq %rsp, %gs:0      /* Save user RSP in GS:[0] */
-    movq %gs:8, %rsp      /* Load kernel RSP from GS:[8] */
-    pushq %r15
-    pushq %r14
-    pushq %r13
-    pushq %r12
-    pushq %r11
-    pushq %r10
-    pushq %r9
-    pushq %r8
-    pushq %rbp
-    pushq %rdi
-    pushq %rsi
-    pushq %rdx
-    pushq %rcx
-    pushq %rbx
-    pushq %rax
-    /* RCX = RIP, R11 = RFLAGS (syscall convention) */
-    pushq %rcx            /* RIP */
-    pushq %r11            /* RFLAGS */
-    /* Call handler */
-    call syscall_handler
-    /* Restore */
-    popq %r11             /* RFLAGS */
-    popq %rcx             /* RIP */
-    popq %rax
-    popq %rbx
-    popq %rcx
-    popq %rdx
-    popq %rsi
-    popq %rdi
-    popq %rbp
-    popq %r8
-    popq %r9
-    popq %r10
-    popq %r11
-    popq %r12
-    popq %r13
-    popq %r14
-    popq %r15
-    movq %gs:0, %rsp      /* Restore user RSP */
-    swapgs
-    sysretq
-.size syscall_stub, . - syscall_stub
 
 /* IRQ Stubs (0-15) */
 IRQ_STUB 0   /* Timer */
@@ -172,7 +121,6 @@ isr_stubs:
     .quad isr_stub_29
     .quad isr_stub_30
     .quad isr_stub_31
-    .quad syscall_stub  /* Index 32 for syscall */
 
 /* Array of IRQ stub pointers */
 .global irq_stubs

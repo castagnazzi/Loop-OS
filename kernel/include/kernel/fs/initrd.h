@@ -17,6 +17,9 @@ struct initrd_node {
 int initrd_init(const void *base, size_t size);
 int initrd_ready(void);
 
+/* Write the canonical absolute form of 'in' ("/a/b", "/" for the root) */
+void initrd_canonical(const char *in, char *out, size_t out_max);
+
 /* Find a file or directory. Paths may be absolute ("/bin/sh") or relative to
  * the root, and may contain "." and ".." components. Returns 0 on success. */
 int initrd_lookup(const char *path, struct initrd_node *out);

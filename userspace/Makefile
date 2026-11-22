@@ -1,99 +1,61 @@
-# Userspace Makefile for Loop-OS
+# Userspace build: ulib (the minimal C library) and the programs in bin/.
+#
+#   make            build everything into ../build/userspace
+#   make install    copy the programs into $(ROOTFS) (used by `make initrd`)
+#
+# The previous, never-built scaffold lives in legacy/.
 
-ARCH           := x86_64
-TARGET         := x86_64-elf
-BUILD_DIR      := ../build/userspace
-LIB_DIR        := ../build/userspace/lib
+TARGET   := x86_64-elf
+CC       := $(TARGET)-gcc
+LD       := $(TARGET)-ld
+AR       := $(TARGET)-ar
 
-# Cross-compiler
-CC             := $(TARGET)-gcc
-CXX            := $(TARGET)-g++
-AS             := $(TARGET)-as
-LD             := $(TARGET)-ld
-AR             := $(TARGET)-ar
-OBJCOPY        := $(TARGET)-objcopy
-STRIP          := $(TARGET)-strip
+BUILD    := ../build/userspace
+ROOTFS   ?= ../build/rootfs
 
-# Host tools
-MKDIR          := mkdir -p
-RM             := rm -rf
-CP             := cp -r
+# Freestanding user code: no SSE (the kernel does not save FPU state yet),
+# no PIC (programs are linked at a fixed address), and no loop-to-memset
+# rewriting inside our own memset/memcpy.
+CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra \
+            -ffreestanding -fno-pic -fno-pie -fno-stack-protector \
+            -fno-tree-loop-distribute-patterns \
+            -mno-red-zone -mno-sse -mno-sse2 -mno-mmx -mno-3dnow \
+            -Iinclude -I../kernel/include
 
-# Flags
-CFLAGS         := -std=gnu11 -ffreestanding -fno-pic -fno-pie -fno-stack-protector \
-                  -mno-red-zone -O2 -g \
-                  -Wall -Wextra -Wno-unused-parameter \
-                  -I../userspace/libc/include \
-                  -I../kernel/include \
-                  -D_KERNEL_SYSCALLS
+LDFLAGS  := -nostdlib -static -z max-page-size=0x1000 -T user.ld
 
-LDFLAGS        := -nostdlib -static -T ../userspace/user.ld
+PROGS    := init sh hello ls cat sleep ps kill spin crash
+BINS     := $(addprefix $(BUILD)/bin/,$(PROGS))
+LIB      := $(BUILD)/libulib.a
+CRT0     := $(BUILD)/crt0.o
 
-# Source directories
-LIBC_SRCS      := $(wildcard ../userspace/libc/src/*.c)
-INIT_SRCS      := $(wildcard ../userspace/init/*.c)
+.PHONY: all install clean
+all: $(BINS)
 
-# Object files
-LIBC_OBJS      := $(patsubst ../userspace/libc/src/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_SRCS))
-INIT_OBJS      := $(patsubst ../userspace/init/%.c,$(BUILD_DIR)/init/%.o,$(INIT_SRCS))
+$(CRT0): lib/crt0.S
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Output binaries
-INIT_BIN       := $(BUILD_DIR)/init
-SHELL_BIN      := $(BUILD_DIR)/sh
-LIBC_A         := $(LIB_DIR)/libc.a
+$(BUILD)/ulib.o: lib/ulib.c include/ulib.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Phony targets
-.PHONY: all libc init shell clean install
-
-all: libc init shell
-
-# Build libc
-libc: $(LIBC_A)
-
-$(LIBC_A): $(LIBC_OBJS)
-	@$(MKDIR) -p $(dir $@)
+$(LIB): $(BUILD)/ulib.o
 	$(AR) rcs $@ $^
 
-# Build init
-init: $(INIT_BIN)
-
-$(INIT_BIN): $(BUILD_DIR)/init/init.o $(LIBC_A)
-	@$(MKDIR) -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $< -L$(LIB_DIR) -lc
-
-# Build shell
-shell: $(SHELL_BIN)
-
-$(SHELL_BIN): $(BUILD_DIR)/init/shell.o $(LIBC_A)
-	@$(MKDIR) -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $< -L$(LIB_DIR) -lc
-
-# Compile rules
-$(BUILD_DIR)/libc/%.o: ../userspace/libc/src/%.c
-	@$(MKDIR) -p $(dir $@)
+$(BUILD)/obj/%.o: bin/%.c include/ulib.h
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/init/%.o: ../userspace/init/%.c
-	@$(MKDIR) -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/bin/%: $(BUILD)/obj/%.o $(CRT0) $(LIB) user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $< $(LIB)
 
-# Install to ISO root
 install: all
-	@$(MKDIR) -p ../iso/overlay/bin ../iso/overlay/sbin ../iso/overlay/usr/bin
-	$(CP) $(INIT_BIN) ../iso/overlay/sbin/init
-	$(CP) $(SHELL_BIN) ../iso/overlay/bin/sh
-	$(CP) $(SHELL_BIN) ../iso/overlay/bin/bash
-	@echo "Userspace installed to ISO overlay"
+	@mkdir -p $(ROOTFS)/bin $(ROOTFS)/sbin
+	@cp $(BUILD)/bin/init $(ROOTFS)/sbin/init
+	@for p in $(filter-out init,$(PROGS)); do cp $(BUILD)/bin/$$p $(ROOTFS)/bin/$$p; done
+	@echo "Userspace installed into $(ROOTFS)"
 
 clean:
-	$(RM) $(BUILD_DIR) $(LIB_DIR)
-
-# Help
-help:
-	@echo "Userspace Build Targets:"
-	@echo "  make all       - Build libc, init, shell"
-	@echo "  make libc      - Build libc.a only"
-	@echo "  make init      - Build init binary"
-	@echo "  make shell     - Build shell binary"
-	@echo "  make install   - Install to ISO overlay"
-	@echo "  make clean     - Remove build artifacts"
+	rm -rf $(BUILD)

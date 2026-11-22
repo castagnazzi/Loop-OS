@@ -10,6 +10,8 @@
 #include <kernel/drivers/fb.h>
 #include <kernel/drivers/mouse.h>
 #include <kernel/kshell.h>
+#include <kernel/task.h>
+#include <kernel/arch/x86_64/syscall.h>
 #include <kernel/mm/mm_test.h>
 #include <kernel/arch/x86_64/gdt.h>
 #include <kernel/arch/x86_64/idt.h>
@@ -199,9 +201,29 @@ void kernel_main_higher_half(void) {
     kprintf("\nKernel initialization complete!\n");
     kprintf("Dropping to shell...\n");
 
-    /* Interrupts on: timer ticks and keyboard input start flowing */
+    /* Tasks and system calls (SYSCALL/SYSRET) */
+    task_init();
+    syscall_init();
+
+    /* Interrupts on: timer ticks, keyboard and mouse input start flowing */
     interrupts_enable();
 
-    /* Temporary in-kernel shell until userspace exists */
+    /* Userspace: run /sbin/init (which starts the shell) and wait for it */
+    struct initrd_node init_node;
+    if (initrd_ready() && initrd_lookup("/sbin/init", &init_node) == 0 && !init_node.is_dir) {
+        const char *init_argv[] = { "/sbin/init" };
+        int pid = task_spawn("/sbin/init", init_argv, 1);
+        if (pid > 0) {
+            int status = 0;
+            task_wait(pid, &status, 0);
+            kprintf("\ninit exited with status %d\n", status);
+        } else {
+            kprintf("Cannot start /sbin/init (error %d)\n", -pid);
+        }
+    } else {
+        kprintf("No /sbin/init in the initrd\n");
+    }
+
+    /* Fallback: the in-kernel shell */
     kshell_run();
 }

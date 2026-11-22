@@ -2,6 +2,7 @@
 
 #include <kernel/drivers/timer.h>
 #include <kernel/arch/x86_64/idt.h>
+#include <kernel/statusbar.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include <stdint.h>
@@ -78,7 +79,8 @@ void timer_init(uint32_t frequency) {
 void timer_handler(void *frame) {
     (void)frame;
     timer_tick_count++;
-    
+    statusbar_tick(timer_tick_count);
+
     /* Check callbacks */
     for (int i = 0; i < MAX_TIMER_CALLBACKS; i++) {
         if (timer_callbacks[i].active && timer_tick_count >= timer_callbacks[i].next_tick) {

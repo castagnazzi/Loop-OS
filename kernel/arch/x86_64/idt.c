@@ -2,6 +2,7 @@
 
 #include <kernel/arch/x86_64/idt.h>
 #include <kernel/arch/x86_64/gdt.h>
+#include <kernel/task.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include <stdint.h>
@@ -45,12 +46,24 @@ static const char *exception_names[32] = {
 };
 
 /* Assembly interrupt stubs (defined in interrupts.S) */
-extern void *isr_stubs[33];  /* 0-31 exceptions + [32] syscall */
+extern void *isr_stubs[32];
 extern void *irq_stubs[16];
 
 /* Generic ISR handler */
 void isr_common_handler(struct trap_frame *tf) {
     uint64_t vector = tf->vector;
+
+    /* A fault in user mode only kills that process; the kernel carries on */
+    if (tf->cs & 3) {
+        uint64_t cr2 = 0;
+        if (vector == 14) asm volatile("mov %%cr2, %0" : "=r"(cr2));
+        kprintf("\n[pid %d '%s'] crashed: %s at RIP=0x%lx",
+                current_task->pid, current_task->name,
+                vector < 32 ? exception_names[vector] : "exception", tf->rip);
+        if (vector == 14) kprintf(" (address 0x%lx)", cr2);
+        kprintf("\n");
+        task_exit(128 + 11);
+    }
 
     kprintf("\n*** CPU EXCEPTION %lu: %s ***\n", vector,
             vector < 32 ? exception_names[vector] : "unknown");
@@ -84,6 +97,10 @@ void irq_common_handler(struct trap_frame *tf) {
 
     /* Send EOI */
     pic_send_eoi(irq);
+
+    /* Timer tick: the scheduler may switch to another task. This must come
+     * after the EOI, because the switch can last until the next tick. */
+    if (irq == 0) task_timer_tick(tf);
 }
 
 void idt_init(void) {
@@ -101,20 +118,17 @@ void idt_init(void) {
     for (int i = 0; i < 16; i++) {
         idt_set_gate(32 + i, irq_stubs[i], 0x08, 0x8E);
     }
-    
-    /* Syscall handler (vector 0x80) */
-    idt_set_gate(0x80, isr_stubs[32], 0x08, 0xEF);  /* DPL=3 for syscall */
-    
+
     /* IDT pointer */
     idt_ptr.limit = sizeof(idt) - 1;
     idt_ptr.base = (uint64_t)&idt;
-    
+
     /* Load IDT */
     asm volatile("lidt %0" : : "m"(idt_ptr));
-    
+
     /* Remap PIC */
     pic_remap(32, 40);
-    
+
     kprintf("IDT: initialized with %zu entries\n", sizeof(idt) / sizeof(idt[0]));
 }
 

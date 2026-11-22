@@ -8,6 +8,7 @@
 
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/pmm.h>
+#include <kernel/mm/heap.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include <stdint.h>
@@ -26,6 +27,7 @@ typedef uint64_t pte_t;
 
 static uint64_t vmm_hhdm_offset = 0;
 static pte_t *kernel_pml4 = NULL;
+static uint64_t kernel_pml4_phys = 0;
 
 /* Physical -> virtual through the HHDM */
 static inline void *phys_to_virt(uint64_t phys) {
@@ -72,7 +74,8 @@ void vmm_init(uint64_t hhdm_offset) {
 
     /* Adopt the page tables Limine set up */
     uint64_t cr3 = vmm_get_pml4();
-    kernel_pml4 = phys_to_virt(cr3 & PTE_ADDR_MASK);
+    kernel_pml4_phys = cr3 & PTE_ADDR_MASK;
+    kernel_pml4 = phys_to_virt(kernel_pml4_phys);
 
     kprintf("VMM: initialized, adopted PML4 phys 0x%lx, HHDM offset 0x%lx\n",
             cr3 & PTE_ADDR_MASK, vmm_hhdm_offset);
@@ -114,29 +117,37 @@ int vmm_unmap(void *virt, size_t count) {
     return 0;
 }
 
-void *vmm_virt_to_phys(void *virt) {
-    uint64_t va = (uint64_t)virt;
-    pte_t *table = kernel_pml4;
+/* Translate 'va' through the tables rooted at 'pml4'. Returns 0 if unmapped. */
+static int translate_in(pte_t *pml4, uint64_t va, uint64_t *phys_out) {
+    pte_t *table = pml4;
 
     for (int level = 3; level >= 0; level--) {
         size_t idx = (va >> (12 + level * 9)) & 0x1FF;
         pte_t entry = table[idx];
-        if (!(entry & PTE_PRESENT)) return NULL;
+        if (!(entry & PTE_PRESENT)) return 0;
 
         /* Huge pages: 1 GiB at level 2, 2 MiB at level 1 */
         if (level > 0 && (entry & PTE_HUGE)) {
-            if (level == 3) return NULL;   /* PS must be 0 in the PML4 */
+            if (level == 3) return 0;   /* PS must be 0 in the PML4 */
             uint64_t page_size = 1ULL << (12 + level * 9);
             uint64_t base = entry & PTE_ADDR_MASK & ~(page_size - 1);
-            return (void *)(base | (va & (page_size - 1)));
+            *phys_out = base | (va & (page_size - 1));
+            return 1;
         }
 
         if (level == 0) {
-            return (void *)((entry & PTE_ADDR_MASK) | (va & (VMM_PAGE_SIZE - 1)));
+            *phys_out = (entry & PTE_ADDR_MASK) | (va & (VMM_PAGE_SIZE - 1));
+            return 1;
         }
         table = phys_to_virt(entry & PTE_ADDR_MASK);
     }
-    return NULL;
+    return 0;
+}
+
+void *vmm_virt_to_phys(void *virt) {
+    uint64_t phys;
+    if (!translate_in(kernel_pml4, (uint64_t)virt, &phys)) return NULL;
+    return (void *)phys;
 }
 
 /* Bump allocator for kernel virtual space (never reused, which is fine for
@@ -186,4 +197,124 @@ uint64_t vmm_get_pml4(void) {
     uint64_t cr3;
     asm volatile("mov %%cr3, %0" : "=r"(cr3));
     return cr3;
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-process address spaces.
+ *
+ * The upper half (PML4 entries 256-511: HHDM, kernel image, kernel heap)
+ * is copied from the kernel PML4, so those mappings are shared and the
+ * kernel can run under any address space. The lower half is private. */
+
+struct vmm_space {
+    uint64_t pml4_phys;
+    pte_t *pml4;
+};
+
+vmm_space_t *vmm_space_create(void) {
+    vmm_space_t *sp = kmalloc(sizeof(*sp));
+    if (!sp) return NULL;
+
+    void *page = pmm_alloc(1);
+    if (!page) {
+        kfree(sp);
+        return NULL;
+    }
+    sp->pml4_phys = (uint64_t)page;
+    sp->pml4 = phys_to_virt(sp->pml4_phys);
+    memset(sp->pml4, 0, VMM_PAGE_SIZE);
+    for (int i = 256; i < PT_ENTRIES; i++) sp->pml4[i] = kernel_pml4[i];
+    return sp;
+}
+
+/* Free a page table (and, at level 0, the frames it maps) */
+static void free_tree(uint64_t table_phys, int level) {
+    pte_t *table = phys_to_virt(table_phys);
+    for (int i = 0; i < PT_ENTRIES; i++) {
+        pte_t e = table[i];
+        if (!(e & PTE_PRESENT)) continue;
+        if (level == 0) {
+            pmm_free((void *)(e & PTE_ADDR_MASK), 1);
+        } else if (!(e & PTE_HUGE)) {
+            free_tree(e & PTE_ADDR_MASK, level - 1);
+        }
+    }
+    pmm_free((void *)table_phys, 1);
+}
+
+void vmm_space_destroy(vmm_space_t *sp) {
+    if (!sp) return;
+    /* Never run on the tables being freed */
+    if (vmm_get_pml4() == sp->pml4_phys) vmm_switch_context(kernel_pml4_phys);
+
+    for (int i = 0; i < 256; i++) {
+        pte_t e = sp->pml4[i];
+        if (e & PTE_PRESENT) free_tree(e & PTE_ADDR_MASK, 2);
+    }
+    pmm_free((void *)sp->pml4_phys, 1);
+    kfree(sp);
+}
+
+int vmm_space_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags) {
+    if ((virt | phys) & (VMM_PAGE_SIZE - 1)) return -1;
+    pte_t *pte = vmm_walk(sp->pml4, virt, 1, flags);
+    if (!pte) return -1;
+    *pte = phys | flags | PTE_PRESENT;
+    tlb_invalidate(virt);
+    return 0;
+}
+
+void *vmm_space_translate(vmm_space_t *sp, uint64_t virt) {
+    uint64_t phys;
+    if (!translate_in(sp->pml4, virt, &phys)) return NULL;
+    return (void *)phys;
+}
+
+int vmm_space_alloc_page(vmm_space_t *sp, uint64_t virt, uint64_t flags) {
+    void *frame = pmm_alloc(1);
+    if (!frame) return -1;
+    memset(phys_to_virt((uint64_t)frame), 0, VMM_PAGE_SIZE);
+    if (vmm_space_map(sp, virt, (uint64_t)frame, flags)) {
+        pmm_free(frame, 1);
+        return -1;
+    }
+    return 0;
+}
+
+int vmm_space_copy_to(vmm_space_t *sp, uint64_t virt, const void *src, size_t n) {
+    const uint8_t *s = src;
+    while (n) {
+        void *phys = vmm_space_translate(sp, virt);
+        if (!phys) return -1;
+        size_t in_page = VMM_PAGE_SIZE - (virt & (VMM_PAGE_SIZE - 1));
+        size_t chunk = n < in_page ? n : in_page;
+        memcpy(phys_to_virt((uint64_t)phys), s, chunk);
+        virt += chunk;
+        s += chunk;
+        n -= chunk;
+    }
+    return 0;
+}
+
+int vmm_space_copy_from(vmm_space_t *sp, void *dst, uint64_t virt, size_t n) {
+    uint8_t *d = dst;
+    while (n) {
+        void *phys = vmm_space_translate(sp, virt);
+        if (!phys) return -1;
+        size_t in_page = VMM_PAGE_SIZE - (virt & (VMM_PAGE_SIZE - 1));
+        size_t chunk = n < in_page ? n : in_page;
+        memcpy(d, phys_to_virt((uint64_t)phys), chunk);
+        virt += chunk;
+        d += chunk;
+        n -= chunk;
+    }
+    return 0;
+}
+
+void vmm_space_switch(vmm_space_t *sp) {
+    vmm_switch_context(sp->pml4_phys);
+}
+
+void vmm_switch_kernel(void) {
+    vmm_switch_context(kernel_pml4_phys);
 }

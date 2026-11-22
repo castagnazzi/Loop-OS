@@ -8,6 +8,7 @@
 
 #include <kernel/drivers/mouse.h>
 #include <kernel/drivers/fb.h>
+#include <kernel/statusbar.h>
 #include <kernel/arch/x86_64/idt.h>
 #include <kernel/stdio.h>
 #include <stdint.h>
@@ -130,6 +131,7 @@ void mouse_handler(void *frame) {
     m_serial++;
 
     fb_cursor_move(m_x, m_y);
+    statusbar_mouse_changed();
 }
 
 int mouse_x(void) { return m_x; }

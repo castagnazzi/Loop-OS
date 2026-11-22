@@ -45,6 +45,20 @@ uint64_t vmm_get_pml4(void);
 /* HHDM offset (virtual = physical + offset for all RAM) */
 uint64_t vmm_get_hhdm(void);
 
+/* Per-process address spaces. Kernel mappings are shared by all of them;
+ * the lower half (user addresses) is private to each space. */
+typedef struct vmm_space vmm_space_t;
+
+vmm_space_t *vmm_space_create(void);
+void vmm_space_destroy(vmm_space_t *sp);            /* frees all user pages */
+int vmm_space_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags);
+int vmm_space_alloc_page(vmm_space_t *sp, uint64_t virt, uint64_t flags);  /* zeroed frame */
+void *vmm_space_translate(vmm_space_t *sp, uint64_t virt);   /* physical or NULL */
+int vmm_space_copy_to(vmm_space_t *sp, uint64_t virt, const void *src, size_t n);
+int vmm_space_copy_from(vmm_space_t *sp, void *dst, uint64_t virt, size_t n);
+void vmm_space_switch(vmm_space_t *sp);
+void vmm_switch_kernel(void);                       /* back to the kernel tables */
+
 /* Page size constants */
 #define VMM_PAGE_SIZE 4096
 #define VMM_HUGE_PAGE_SIZE (2 * 1024 * 1024)

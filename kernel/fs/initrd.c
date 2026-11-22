@@ -71,6 +71,16 @@ static void normalize(const char *in, char *out, size_t out_max) {
     }
 }
 
+void initrd_canonical(const char *in, char *out, size_t out_max) {
+    char norm[PATH_MAX_LEN];
+    normalize(in, norm, sizeof(norm));
+    size_t n = strlen(norm);
+    if (n + 2 > out_max) n = out_max - 2;
+    out[0] = '/';
+    memcpy(out + 1, norm, n);
+    out[1 + n] = '\0';
+}
+
 int initrd_init(const void *base, size_t size) {
     ready = 0;
     entry_count = 0;

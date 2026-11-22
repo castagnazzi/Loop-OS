@@ -1,13 +1,14 @@
 /* Minimal in-kernel shell: a prompt, line editing and a few builtins.
- * It exists to exercise the keyboard, timer, console and memory manager
- * until userspace (init + a real shell) is available. */
+ * It is the fallback when there is no /sbin/init (or after init exits), and
+ * a handy way to exercise the kernel directly. The real shell is /bin/sh. */
 
 #include <kernel/kshell.h>
+#include <kernel/task.h>
+#include <kernel/fs/initrd.h>
 #include <kernel/drivers/fb.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/mouse.h>
 #include <kernel/drivers/timer.h>
-#include <kernel/fs/initrd.h>
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/heap.h>
 #include <kernel/mm/mm_test.h>
@@ -17,34 +18,6 @@
 
 #define LINE_MAX 128
 #define TICKS_PER_SEC 100      /* timer_init(100) in kernel_main_higher_half */
-
-/* ---------------------------------------------------------------- */
-/* Uptime clock in the title bar (proves the timer interrupt works) */
-static void draw_uptime(uint64_t secs) {
-    if (!fb_ready()) return;
-    char buf[32];
-    ksnprintf(buf, sizeof(buf), "uptime %02lu:%02lu:%02lu",
-              (unsigned long)(secs / 3600), (unsigned long)((secs / 60) % 60),
-              (unsigned long)(secs % 60));
-    int w = (int)(strlen(buf) * 16);
-    int x = (int)fb_width() - w - 24;
-    fb_fill_rect(x - 8, 14, w + 16, 28, fb_rgb(24, 28, 44));
-    fb_draw_string(x, 20, buf, fb_rgb(150, 220, 170), FB_TRANSPARENT, 2);
-}
-
-static void draw_mouse_status(void) {
-    if (!fb_ready() || !mouse_present()) return;
-    char buf[48];
-    uint8_t b = mouse_buttons();
-    ksnprintf(buf, sizeof(buf), "mouse %4d,%4d [%c%c%c]", mouse_x(), mouse_y(),
-              (b & MOUSE_BTN_LEFT) ? 'L' : '-',
-              (b & MOUSE_BTN_MIDDLE) ? 'M' : '-',
-              (b & MOUSE_BTN_RIGHT) ? 'R' : '-');
-    int w = (int)(strlen(buf) * 8);
-    int x = (int)fb_width() - w - 24;
-    fb_fill_rect(x - 4, 42, w + 8, 10, fb_rgb(24, 28, 44));
-    fb_draw_string(x, 43, buf, fb_rgb(150, 170, 200), FB_TRANSPARENT, 1);
-}
 
 /* ---------------------------------------------------------------- */
 /* Builtins */
@@ -57,6 +30,8 @@ static void cmd_help(void) {
     kprintf("  memtest       run the memory self test again\n");
     kprintf("  ls [path]     list a directory of the initrd\n");
     kprintf("  cat <file>    print a file from the initrd\n");
+    kprintf("  run <prog>    run a program from the initrd and wait for it\n");
+    kprintf("  ps            list tasks\n");
     kprintf("  mouse         mouse position and buttons\n");
     kprintf("  clear         clear the screen\n");
     kprintf("  version       kernel info\n");
@@ -119,6 +94,47 @@ static void cmd_cat(const char *path) {
     if (node.size && node.data[node.size - 1] != '\n') kputchar('\n');
 }
 
+static void cmd_run(char *args) {
+    if (!args || !*args) {
+        kprintf("usage: run <program> [args]\n");
+        return;
+    }
+
+    /* Split "prog a b c" into argv */
+    static char buf[LINE_MAX];
+    const char *argv[16];
+    int argc = 0;
+    strncpy(buf, args, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    char *p = buf;
+    while (*p && argc < 15) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        argv[argc++] = p;
+        while (*p && *p != ' ') p++;
+        if (*p) *p++ = '\0';
+    }
+
+    int pid = task_spawn(argv[0], argv, argc);
+    if (pid < 0) {
+        kprintf("run: cannot start %s (error %d)\n", argv[0], -pid);
+        return;
+    }
+    int status = 0;
+    task_wait(pid, &status, 0);
+    kprintf("[pid %d exited with status %d]\n", pid, status);
+}
+
+static void cmd_ps(void) {
+    static const char *names[] = { "?", "ready", "running", "blocked", "zombie" };
+    kprintf("  PID  PPID  STATE    NAME\n");
+    struct task_info ti;
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (task_info(i, &ti) != 0) continue;
+        kprintf("  %3d  %4d  %-8s %s\n", ti.pid, ti.ppid, names[ti.state], ti.name);
+    }
+}
+
 static void cmd_mouse(void) {
     if (!mouse_present()) {
         kprintf("no mouse\n");
@@ -155,9 +171,11 @@ static void run_command(char *line) {
     else if (!strcmp(line, "memtest")) mm_selftest();
     else if (!strcmp(line, "ls")) cmd_ls(args);
     else if (!strcmp(line, "cat")) cmd_cat(args);
+    else if (!strcmp(line, "run")) cmd_run(args);
+    else if (!strcmp(line, "ps")) cmd_ps();
     else if (!strcmp(line, "mouse")) cmd_mouse();
     else if (!strcmp(line, "clear")) fbcon_clear();
-    else if (!strcmp(line, "version")) kprintf("Loop-OS kernel (x86_64), phase 1\n");
+    else if (!strcmp(line, "version")) kprintf("Loop-OS kernel (x86_64), phase 3\n");
     else if (!strcmp(line, "reboot")) cmd_reboot();
     else kprintf("unknown command: %s (try 'help')\n", line);
 }
@@ -166,25 +184,11 @@ static void run_command(char *line) {
 void kshell_run(void) {
     char line[LINE_MAX];
     size_t len = 0;
-    uint64_t last_sec = (uint64_t)-1;
-    uint32_t last_mouse = (uint32_t)-1;
 
-    kprintf("\nLoop-OS shell. Type 'help' for commands.\n");
+    kprintf("\nLoop-OS kernel shell. Type 'help' for commands.\n");
     kprintf("loop-os> ");
 
     for (;;) {
-        /* Refresh the clock once per second */
-        uint64_t sec = timer_ticks() / TICKS_PER_SEC;
-        if (sec != last_sec) {
-            last_sec = sec;
-            draw_uptime(sec);
-        }
-        uint32_t ms = mouse_serial();
-        if (ms != last_mouse) {
-            last_mouse = ms;
-            draw_mouse_status();
-        }
-
         int c = keyboard_getchar();
         if (c < 0) {
             asm volatile("hlt");     /* wake on the next interrupt */
