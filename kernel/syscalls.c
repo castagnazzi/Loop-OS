@@ -12,6 +12,7 @@
 #include <kernel/drivers/rtc.h>
 #include <kernel/gui.h>
 #include <kernel/blk.h>
+#include <kernel/net/net.h>
 #include <kernel/mm/pmm.h>
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/drivers/keyboard.h>
@@ -79,6 +80,9 @@ static long sys_read(int fdn, uint64_t buf, uint64_t count) {
         if (n > 0) f->off += (size_t)n;
     } else if (f->kind == FD_PIPE_R) {
         n = pipe_read(f->pipe, tmp, count);
+    } else if (f->kind == FD_SOCK) {
+        n = tcp_recv(f->sock, tmp, count);
+        if (n < 0) return n;
     } else {
         return -SYS_EBADF;
     }
@@ -90,7 +94,7 @@ static long sys_read(int fdn, uint64_t buf, uint64_t count) {
 static long sys_write(int fdn, uint64_t buf, uint64_t count) {
     struct fd *f = get_fd(fdn);
     if (!f) return -SYS_EBADF;
-    if (f->kind != FD_CONSOLE_OUT && f->kind != FD_FILE && f->kind != FD_PIPE_W) return -SYS_EACCES;
+    if (f->kind != FD_CONSOLE_OUT && f->kind != FD_FILE && f->kind != FD_PIPE_W && f->kind != FD_SOCK) return -SYS_EACCES;
     if (f->kind == FD_FILE && !(f->flags & (O_WRONLY | O_RDWR))) return -SYS_EACCES;
 
     if (f->kind == FD_FILE && (f->flags & O_APPEND)) f->off = f->vn->size;
@@ -106,6 +110,9 @@ static long sys_write(int fdn, uint64_t buf, uint64_t count) {
             long w = vfs_write(f->vn, f->off, tmp, chunk);
             if (w < 0) return done ? (long)done : w;
             f->off += (size_t)w;
+        } else if (f->kind == FD_SOCK) {
+            long w = tcp_send(f->sock, tmp, chunk);
+            if (w < 0) return done ? (long)done : w;
         } else {
             long w = pipe_write(f->pipe, tmp, chunk);
             if (w < 0) return done ? (long)done : w;
@@ -408,7 +415,52 @@ static long sys_fd_avail(int fdn) {
     if (!f) return -SYS_EBADF;
     if (f->kind == FD_PIPE_R) return pipe_avail(f->pipe);
     if (f->kind == FD_CONSOLE_IN) return keyboard_has_key() ? 1 : 0;
+    if (f->kind == FD_SOCK) return tcp_avail(f->sock);
     return -SYS_EBADF;
+}
+
+/* ---------------------------------------------------------------- */
+/* Network */
+#define SYS_ENODEV 19
+
+static long sys_netinfo(uint64_t ubuf) {
+    const struct netinfo *n = net_info();
+    struct sys_netinfo out;
+    memset(&out, 0, sizeof(out));
+    memcpy(out.mac, n->mac, 6);
+    out.present = (uint8_t)n->present;
+    out.link = (uint8_t)n->link;
+    out.configured = (uint8_t)n->configured;
+    out.ip = n->ip; out.mask = n->mask; out.gw = n->gw; out.dns = n->dns;
+    return copy_to_user(ubuf, &out, sizeof(out)) == 0 ? 0 : -SYS_EFAULT;
+}
+
+static long sys_dns(uint64_t uname, uint64_t uip) {
+    char name[128];
+    if (copy_str_from_user(name, uname, sizeof(name)) != 0) return -SYS_EFAULT;
+    if (!net_info()->present) return -SYS_ENODEV;
+    uint32_t ip;
+    if (net_dns(name, &ip) != 0) return -SYS_ENOENT;
+    return copy_to_user(uip, &ip, sizeof(ip)) == 0 ? 0 : -SYS_EFAULT;
+}
+
+static long sys_ping(uint64_t ip, uint64_t timeout_ms) {
+    if (!net_info()->present) return -SYS_ENODEV;
+    if (timeout_ms > 10000) timeout_ms = 10000;
+    return net_ping((uint32_t)ip, (int)timeout_ms);
+}
+
+static long sys_tcp_connect(uint64_t ip, uint64_t port) {
+    if (!net_info()->present) return -SYS_ENODEV;
+    int idx;
+    struct fd *f = alloc_fd(&idx);
+    if (!f) return -SYS_EMFILE;
+    struct tcpsock *s = tcp_connect((uint32_t)ip, (uint16_t)port, 5000);
+    if (!s) return -111;                       /* ECONNREFUSED */
+    memset(f, 0, sizeof(*f));
+    f->kind = FD_SOCK;
+    f->sock = s;
+    return idx;
 }
 
 /* ---------------------------------------------------------------- */
@@ -445,6 +497,10 @@ void syscall_dispatch(struct syscall_frame *f) {
     case SYS_WIN_DESTROY: ret = wm_destroy((int)a1, current_task->pid); break;
     case SYS_FD_AVAIL:    ret = sys_fd_avail((int)a1); break;
     case SYS_SYSINFO:   ret = sys_sysinfo(a1); break;
+    case SYS_NETINFO:   ret = sys_netinfo(a1); break;
+    case SYS_DNS:       ret = sys_dns(a1, a2); break;
+    case SYS_PING:      ret = sys_ping(a1, a2); break;
+    case SYS_TCP_CONNECT: ret = sys_tcp_connect(a1, a2); break;
     case SYS_WALLTIME: {
         struct rtc_time t;
         rtc_read(&t);

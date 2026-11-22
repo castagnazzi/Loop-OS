@@ -139,7 +139,8 @@ loop-os/
 | 2 - Drivers e FS | Parcial: ramfs gravavel (arquivos, pastas, `mkdir`/`rm`/`cp`), disco ATA, particoes MBR/GPT e leitura de FAT32, NTFS e ext2/3/4 montados em `/mnt/<disco>`. Faltam PCI, AHCI/NVMe, escrita nos discos, rede |
 | 3 - Userspace básico | Funcionando em ring 3: SYSCALL/SYSRET, processos, `fork`/`execve`/`spawn`, pipes, ELF, scheduler preemptivo, `init` e `sh` (com `|`, `<`, `>`, `>>`, `&`) |
 | 4 - Desktop | Funcionando: compositor no kernel, janelas arrastaveis, barra de tarefas com relogio (RTC), menu Iniciar (`/etc/menu`), libgui e apps: terminal, bloco de notas, arquivos, calculadora, gerenciador de tarefas |
-| 5 a 7 | Não iniciadas (rede, audio, apps maiores) |
+| Rede | Funcionando: PCI, placa Intel e1000, DHCP, ARP, ICMP, UDP, DNS e TCP (cliente). Apps `ping`, `wget` (HTTP), `ifconfig`, `nslookup`. Faltam TLS/HTTPS, SMB, outras placas (Realtek, Wi-Fi) |
+| 5 a 7 | Não iniciadas (audio, navegador, apps maiores) |
 
 ### Como rodar
 
@@ -153,7 +154,7 @@ qemu-system-x86_64 -cdrom build/loop-os.iso -m 256 -serial stdio
 Com framebuffer, o kernel abre o desktop e lanca o Terminal (que roda `/bin/sh`).
 Programas em `/bin`: `ls cat cp mkdir rm wc hello ps kill sleep spin crash` e os
 apps graficos `term notepad files calc taskmgr`. Os itens do menu Iniciar ficam em
-`rootfs/etc/menu` (`Rotulo|comando`). O app Arquivos tem arvore de pastas e lista com tamanhos. O menu tem "Sobre o Loop-OS" (assinatura e dados do sistema), Reiniciar e Desligar. O desktop abre vazio, sem terminal. O papel de parede vem de `/etc/wallpaper.lwp` (gere outro com `python tools/gen_wallpaper.py imagem.png 300`; a imagem original do mascote esta em `assets/mascote.png`). Os arquivos que vem com o sistema (`/bin`, `/etc`...) sao protegidos contra apagar e sobrescrever; `/tmp` e arquivos novos sao livres. O relogio mostra a hora do RTC: use
+`rootfs/etc/menu` (`Rotulo|comando`). Para testar a rede no QEMU: `-netdev user,id=n0 -device e1000,netdev=n0` (o host aparece como 10.0.2.2). O app Arquivos tem arvore de pastas e lista com tamanhos. O menu tem "Sobre o Loop-OS" (assinatura e dados do sistema), Reiniciar e Desligar. O desktop abre vazio, sem terminal. O papel de parede vem de `/etc/wallpaper.lwp` (gere outro com `python tools/gen_wallpaper.py imagem.png 300`; a imagem original do mascote esta em `assets/mascote.png`). Os arquivos que vem com o sistema (`/bin`, `/etc`...) sao protegidos contra apagar e sobrescrever; `/tmp` e arquivos novos sao livres. O relogio mostra a hora do RTC: use
 `-rtc base=localtime` no QEMU para a hora local.
 
 O código do userspace está em `userspace/` (ulib + programas). O scaffold antigo,

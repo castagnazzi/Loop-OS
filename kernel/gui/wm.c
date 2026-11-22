@@ -17,6 +17,7 @@
 #include <kernel/mm/heap.h>
 #include <kernel/arch/x86_64/idt.h>
 #include <kernel/arch/x86_64/power.h>
+#include <kernel/net/net.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include "../drivers/font8x8.h"
@@ -774,6 +775,7 @@ void wm_run(void) {
     compose();
 
     for (;;) {
+        net_poll();
         handle_keyboard();
         handle_mouse();
         update_clock();

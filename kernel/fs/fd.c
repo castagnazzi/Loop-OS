@@ -4,6 +4,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/mm/heap.h>
 #include <kernel/drivers/timer.h>
+#include <kernel/net/net.h>
 #include <kernel/string.h>
 
 #define PIPE_SIZE 4096
@@ -19,6 +20,7 @@ void fd_dup_into(struct fd *dst, const struct fd *src) {
     if (src->kind == FD_FILE) vfs_ref(src->vn);
     else if (src->kind == FD_PIPE_R) src->pipe->readers++;
     else if (src->kind == FD_PIPE_W) src->pipe->writers++;
+    else if (src->kind == FD_SOCK) tcp_ref(src->sock);
 }
 
 void fd_release(struct fd *f) {
@@ -29,6 +31,7 @@ void fd_release(struct fd *f) {
         if (f->kind == FD_PIPE_R) p->readers--; else p->writers--;
         if (p->readers <= 0 && p->writers <= 0) kfree(p);
     }
+    else if (f->kind == FD_SOCK) tcp_unref(f->sock);
     f->kind = FD_NONE;
 }
 

@@ -44,6 +44,10 @@
 #define SYS_WIN_DESTROY 113  /* win_destroy(id) */
 #define SYS_FD_AVAIL    114  /* fd_avail(fd): bytes readable without blocking, -1 at EOF */
 #define SYS_SYSINFO     116  /* sysinfo(struct sys_sysinfo *) */
+#define SYS_NETINFO     117  /* netinfo(struct sys_netinfo *) */
+#define SYS_DNS         118  /* dns(name, uint32_t *ip) -> 0 or < 0 */
+#define SYS_PING        119  /* ping(ip, timeout_ms) -> round trip ms or < 0 */
+#define SYS_TCP_CONNECT 120  /* tcp_connect(ip, port) -> fd (read/write/close like a file) */
 #define SYS_WALLTIME    115  /* walltime() -> hour*3600 + minute*60 + second */
 
 /* errno values used by the kernel */
@@ -84,6 +88,12 @@ struct sys_sysinfo {
     uint32_t fb_w, fb_h;
     uint32_t ntasks, ndisks;
     uint64_t uptime_ms;
+};
+
+struct sys_netinfo {
+    uint8_t mac[6];
+    uint8_t present, link, configured, pad;
+    uint32_t ip, mask, gw, dns;     /* host order: a.b.c.d = a<<24 | b<<16 | c<<8 | d */
 };
 
 struct sys_taskinfo {

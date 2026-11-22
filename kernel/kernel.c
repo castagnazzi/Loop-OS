@@ -22,6 +22,7 @@
 #include <kernel/fs/initrd.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/blk.h>
+#include <kernel/net/net.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/drivers/keyboard.h>
 
@@ -216,6 +217,9 @@ void kernel_main_higher_half(void) {
 
     /* Interrupts on: timer ticks, keyboard and mouse input start flowing */
     interrupts_enable();
+
+    /* Network card and DHCP (polled from the desktop loop) */
+    net_init();
 
     /* Graphical desktop: it owns the screen from here on */
     if (fb_ready() && wm_init() == 0) {

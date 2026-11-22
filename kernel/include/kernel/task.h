@@ -29,13 +29,15 @@ enum task_state { T_UNUSED = 0, T_READY, T_RUNNING, T_BLOCKED, T_ZOMBIE };
 enum wait_kind { W_NONE = 0, W_KEY, W_CHILD, W_SLEEP };
 
 /* Open file descriptor */
-enum fd_kind { FD_NONE = 0, FD_CONSOLE_IN, FD_CONSOLE_OUT, FD_FILE, FD_DIR, FD_PIPE_R, FD_PIPE_W };
+enum fd_kind { FD_NONE = 0, FD_CONSOLE_IN, FD_CONSOLE_OUT, FD_FILE, FD_DIR, FD_PIPE_R, FD_PIPE_W, FD_SOCK };
 struct vnode;
 struct pipe;
+struct tcpsock;
 struct fd {
     enum fd_kind kind;
     struct vnode *vn;          /* FD_FILE */
     struct pipe *pipe;         /* FD_PIPE_R / FD_PIPE_W */
+    struct tcpsock *sock;      /* FD_SOCK */
     size_t off;                /* FD_FILE: position; FD_DIR: entry index */
     int flags;                 /* O_* flags the file was opened with */
     char path[PATH_BUF];       /* FD_DIR: directory path */

@@ -51,6 +51,10 @@ pid_t fork(void) { return (pid_t)sys0(SYS_FORK); }
 int execve(const char *path, char *const argv[]) { return (int)sys2(SYS_EXECVE, (long)path, (long)argv); }
 int mkdir(const char *path) { return (int)sys1(SYS_MKDIR, (long)path); }
 int unlink(const char *path) { return (int)sys1(SYS_UNLINK, (long)path); }
+int netinfo(struct sys_netinfo *info) { return (int)sys1(SYS_NETINFO, (long)info); }
+int dns_resolve(const char *name, uint32_t *ip) { return (int)sys2(SYS_DNS, (long)name, (long)ip); }
+int ping_ip(uint32_t ip, int timeout_ms) { return (int)sys2(SYS_PING, (long)ip, timeout_ms); }
+int tcp_connect(uint32_t ip, int port) { return (int)sys2(SYS_TCP_CONNECT, (long)ip, port); }
 int sysinfo(struct sys_sysinfo *info) { return (int)sys1(SYS_SYSINFO, (long)info); }
 int spawn(const char *path, char *const argv[]) { return (int)sys2(SYS_SPAWN, (long)path, (long)argv); }
 pid_t waitpid(pid_t pid, int *status, int options) {

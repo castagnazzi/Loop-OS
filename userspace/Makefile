@@ -16,7 +16,7 @@ ROOTFS   ?= ../build/rootfs
 # Freestanding user code: no SSE (the kernel does not save FPU state yet),
 # no PIC (programs are linked at a fixed address), and no loop-to-memset
 # rewriting inside our own memset/memcpy.
-CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra \
+CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra -MMD -MP \
             -ffreestanding -fno-pic -fno-pie -fno-stack-protector \
             -fno-tree-loop-distribute-patterns \
             -mno-red-zone -mno-sse -mno-sse2 -mno-mmx -mno-3dnow \
@@ -24,10 +24,12 @@ CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra \
 
 LDFLAGS  := -nostdlib -static -z max-page-size=0x1000 -T user.ld
 
-PROGS    := init sh hello ls cat sleep ps kill spin crash mkdir rm cp wc term notepad files calc taskmgr about
+PROGS    := init sh hello ls cat sleep ps kill spin crash mkdir rm cp wc term notepad files calc taskmgr about ping wget ifconfig nslookup
 BINS     := $(addprefix $(BUILD)/bin/,$(PROGS))
 LIB      := $(BUILD)/libulib.a
 CRT0     := $(BUILD)/crt0.o
+
+-include $(wildcard $(BUILD)/*.d $(BUILD)/obj/*.d)
 
 .PHONY: all install clean
 all: $(BINS)

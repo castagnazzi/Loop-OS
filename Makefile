@@ -98,11 +98,14 @@ $(KERNEL_BIN): $(KERNEL_OBJS) $(KERNEL_DIR)/kernel.ld
 
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c
 	@$(MKDIR) -p $(dir $@)
-	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+	$(CC) $(KERNEL_CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.S
 	@$(MKDIR) -p $(dir $@)
-	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+	$(CC) $(KERNEL_CFLAGS) -MMD -MP -c $< -o $@
+
+# Header dependencies (written by -MMD next to each object)
+-include $(KERNEL_OBJS:.o=.d)
 
 # =============================================================================
 # Userspace Build (placeholder - Fase 3+)

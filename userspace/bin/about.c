@@ -4,7 +4,7 @@
 #include "../../kernel/drivers/logo.h"
 
 #define W 480
-#define H 400
+#define H 424
 
 #define C_BG     RGB(26, 30, 44)
 #define C_TEXT   RGB(225, 232, 245)
@@ -71,7 +71,14 @@ static void render(void) {
     snprintf(line, sizeof(line), "%u em execu\xe7\xe3o", si.ntasks);
     row(y, "Tarefas", line);                                   y += 24;
     snprintf(line, sizeof(line), "%u", si.ndisks);
-    row(y, "Discos", line);
+    row(y, "Discos", line);                                    y += 24;
+
+    struct sys_netinfo ni;
+    netinfo(&ni);
+    if (!ni.present) snprintf(line, sizeof(line), "sem placa de rede");
+    else if (!ni.configured) snprintf(line, sizeof(line), "%s", ni.link ? "aguardando DHCP..." : "sem cabo");
+    else snprintf(line, sizeof(line), "%u.%u.%u.%u", ni.ip >> 24, (ni.ip >> 16) & 255, (ni.ip >> 8) & 255, ni.ip & 255);
+    row(y, "Rede", line);
 
     gui_button(&g, W - 96, H - 40, 80, 28, "OK", 0);
     gui_present(&g);
