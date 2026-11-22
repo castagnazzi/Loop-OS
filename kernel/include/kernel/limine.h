@@ -103,11 +103,14 @@ struct limine_kernel_file_response {
 
 /* ---------------------------------------------------------------- */
 /* Module (initrd) */
+/* Matches the leading fields of Limine's struct limine_file (a loaded
+ * module). 'address' is a virtual address (HHDM) of the module's bytes. */
 struct limine_module {
+    uint64_t revision;
+    void *address;
+    uint64_t size;
     char *path;
     char *cmdline;
-    uint64_t start;
-    uint64_t size;
 };
 
 struct limine_module_request {

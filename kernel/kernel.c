@@ -15,6 +15,7 @@
 #include <kernel/arch/x86_64/idt.h>
 #include <kernel/arch/x86_64/serial.h>
 #include <kernel/arch/x86_64/cpu.h>
+#include <kernel/fs/initrd.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/drivers/keyboard.h>
 
@@ -85,6 +86,20 @@ static void init_paging(void) {
 }
 
 /* ---------------------------------------------------------------- */
+/* Index the initrd, which Limine loaded as the first module */
+static void init_initrd(void) {
+    struct limine_module_response *resp = limine_module_request.response;
+    if (!resp || resp->module_count == 0) {
+        kprintf("initrd: no module loaded\n");
+        return;
+    }
+    struct limine_module *mod = resp->modules[0];
+    int n = initrd_init(mod->address, mod->size);
+    kprintf("initrd: %s, %lu bytes, %d entries\n", mod->path,
+            (unsigned long)mod->size, n);
+}
+
+/* ---------------------------------------------------------------- */
 /* Initialize framebuffer */
 static void init_framebuffer(void) {
     struct limine_framebuffer_response *fb_resp = limine_framebuffer_request.response;
@@ -144,6 +159,8 @@ void kernel_main(void) {
     if (mm_selftest() != 0) {
         kernel_panic("Memory self test failed");
     }
+
+    init_initrd();
 
     /* Now we're in higher-half, call higher-half main */
     /* This is a trampoline - real work in kernel_main_higher_half */

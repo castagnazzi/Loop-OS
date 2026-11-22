@@ -44,6 +44,12 @@ static int printf_putc_serial(int c, void *data) {
     return c;
 }
 
+/* One character to serial + log + display sink (used for raw output, e.g.
+ * data written by user programs) */
+void kputchar(char c) {
+    printf_putc_serial(c, NULL);
+}
+
 static int printf_putc_buf(int c, void *data) {
     struct printf_state *st = data;
     if (st->pos < st->size - 1) {

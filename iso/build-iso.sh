@@ -6,6 +6,7 @@ set -euo pipefail
 
 BUILD_DIR="${1:-../build}"
 KERNEL_ELF="${2:-../build/kernel.elf}"
+INITRD="${3:-}"            # optional tar archive loaded as a Limine module
 ISO_NAME="loop-os.iso"
 ISO_PATH="$BUILD_DIR/$ISO_NAME"
 
@@ -64,6 +65,14 @@ timeout: 5
     path: boot():/boot/kernel.elf
     cmdline: loglevel=debug nomodeset noacpi
 EOF
+
+# Initial ramdisk, handed to the kernel as a Limine module on every entry
+if [[ -n "$INITRD" && -f "$INITRD" ]]; then
+    echo "Initrd: $INITRD"
+    cp "$INITRD" "$ISO_ROOT/boot/initrd.tar"
+    sed -i 's|^\(    cmdline:.*\)$|\1\n    module_path: boot():/boot/initrd.tar|' \
+        "$ISO_ROOT/boot/limine/limine.conf"
+fi
 
 # Copy Limine bootloader files
 cp "$LIMINE_DIR/limine-bios.sys" "$ISO_ROOT/boot/limine/"

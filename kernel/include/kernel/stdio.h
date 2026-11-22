@@ -17,6 +17,9 @@ int kvprintf(const char *fmt, va_list ap);
 int ksnprintf(char *buf, size_t size, const char *fmt, ...);
 int kvsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
 
+/* Raw single-character output to every sink */
+void kputchar(char c);
+
 /* Mirror kprintf output to a display sink; past output is replayed to it */
 void kprintf_set_sink(void (*sink)(char));
 

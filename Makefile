@@ -116,9 +116,24 @@ userspace:
 # =============================================================================
 iso: kernel $(ISO_FILE)
 
-$(ISO_FILE): kernel
+# Initial ramdisk: everything under rootfs/ plus the built userspace programs,
+# packed as a ustar archive that Limine loads as a module.
+ROOTFS_SRC     := rootfs
+ROOTFS_DIR     := $(BUILD_DIR)/rootfs
+INITRD         := $(BUILD_DIR)/initrd.tar
+
+.PHONY: initrd
+initrd:
+	@echo "=== Building initrd ==="
+	@$(RM) $(ROOTFS_DIR)
+	@$(MKDIR) $(ROOTFS_DIR)
+	@$(CP) $(ROOTFS_SRC)/. $(ROOTFS_DIR)/
+	@tar --format=ustar -cf $(INITRD) -C $(ROOTFS_DIR) .
+	@echo "Initrd: $(INITRD)"
+
+$(ISO_FILE): kernel initrd
 	@echo "=== Building ISO ==="
-	@cd $(ISO_DIR) && ./build-iso.sh $(abspath $(BUILD_DIR)) $(abspath $(KERNEL_BIN))
+	@cd $(ISO_DIR) && ./build-iso.sh $(abspath $(BUILD_DIR)) $(abspath $(KERNEL_BIN)) $(abspath $(INITRD))
 
 # =============================================================================
 # QEMU Targets
