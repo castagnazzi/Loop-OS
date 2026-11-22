@@ -136,7 +136,7 @@ loop-os/
 |------|----------|
 | 0 - Toolchain e build | Pronta: `make toolchain`, `make`, `make iso`, `make run` |
 | 1 - Kernel core | Pronta: GDT/IDT, PIC, PMM, VMM, heap (`kmalloc`/`kfree`), timer, teclado, mouse, framebuffer + console. 69 testes de memória rodam no boot |
-| 2 - Drivers e FS | Parcial: ramfs gravavel carregado do initrd (arquivos, pastas, `mkdir`/`rm`/`cp`), sem persistencia. Faltam PCI, disco, FAT32, ext2, rede |
+| 2 - Drivers e FS | Parcial: ramfs gravavel (arquivos, pastas, `mkdir`/`rm`/`cp`), disco ATA, particoes MBR/GPT e leitura de FAT32, NTFS e ext2/3/4 montados em `/mnt/<disco>`. Faltam PCI, AHCI/NVMe, escrita nos discos, rede |
 | 3 - Userspace básico | Funcionando em ring 3: SYSCALL/SYSRET, processos, `fork`/`execve`/`spawn`, pipes, ELF, scheduler preemptivo, `init` e `sh` (com `|`, `<`, `>`, `>>`, `&`) |
 | 4 - Desktop | Funcionando: compositor no kernel, janelas arrastaveis, barra de tarefas com relogio (RTC), menu Iniciar (`/etc/menu`), libgui e apps: terminal, bloco de notas, arquivos, calculadora, gerenciador de tarefas |
 | 5 a 7 | Não iniciadas (rede, audio, apps maiores) |
@@ -153,7 +153,7 @@ qemu-system-x86_64 -cdrom build/loop-os.iso -m 256 -serial stdio
 Com framebuffer, o kernel abre o desktop e lanca o Terminal (que roda `/bin/sh`).
 Programas em `/bin`: `ls cat cp mkdir rm wc hello ps kill sleep spin crash` e os
 apps graficos `term notepad files calc taskmgr`. Os itens do menu Iniciar ficam em
-`rootfs/etc/menu` (`Rotulo|comando`). O relogio mostra a hora do RTC: use
+`rootfs/etc/menu` (`Rotulo|comando`). O app Arquivos tem arvore de pastas e lista com tamanhos. O relogio mostra a hora do RTC: use
 `-rtc base=localtime` no QEMU para a hora local.
 
 O código do userspace está em `userspace/` (ulib + programas). O scaffold antigo,
@@ -195,7 +195,8 @@ no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 - [x] PS/2 mouse + USB HID (teclado/mouse) (PS/2 pronto; USB pendente)
 - [x] VFS layer (mount, open/read/write/close, opendir/readdir) (ramfs gravável + montagem de FS reais)
 - [x] FAT32 driver (boot partition, USB) (somente leitura, em teste; driver de disco ATA e partições MBR/GPT prontos)
-- [ ] ext2/ext3/ext4 driver (root partition)
+- [x] ext2/ext3/ext4 driver (root partition) (somente leitura; extents, htree, symlinks)
+- [x] NTFS (somente leitura; sem arquivos comprimidos/criptografados)
 - [x] Ramfs/tmpfs para /dev, /run, /tmp (`/tmp` pronto; /dev e /run pendentes)
 - [ ] Device nodes (/dev/fb0, /dev/kbd, /dev/mouse, /dev/null, /dev/zero)
 
@@ -364,3 +365,8 @@ MIT — Veja [LICENSE](LICENSE)
 Este é um projeto educacional/experimental. Issues e PRs bem-vindos para fases específicas.
 
 > **Dica**: Comece pela **Fase 0**. Cada fase deve compilar e rodar isoladamente antes de avançar.
+## Creditos
+
+- Fonte de texto: Terminus 8x16 (SIL Open Font License 1.1, (c) Dimitar Zhekov), convertida por `tools/gen_font.py`.
+- Fonte 8x8 antiga: `font8x8_basic` (dominio publico).
+- Bootloader: Limine.

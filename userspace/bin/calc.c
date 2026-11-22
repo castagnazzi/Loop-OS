@@ -59,8 +59,8 @@ static void render(struct gwin *g) {
     if (error) snprintf(buf, sizeof(buf), "erro");
     else snprintf(buf, sizeof(buf), "%ld", cur);
     int w = (int)strlen(buf) * 16;
-    gui_text(g, W - LEFT - 8 - w, 22, buf, RGB(150, 230, 180), 2);
-    if (op) gui_char(g, LEFT + 6, 12, op, RGB(150, 170, 200), 1);
+    gui_text(g, W - LEFT - 8 - w, 14, buf, RGB(150, 230, 180), 2);
+    if (op) gui_char(g, LEFT + 6, 10, op, RGB(150, 170, 200), 1);
 
     for (int r = 0; r < 5; r++) {
         for (int c = 0; c < 4; c++) {

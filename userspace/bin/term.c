@@ -4,9 +4,9 @@
 #include <gui.h>
 
 #define COLS 78
-#define ROWS 36
+#define ROWS 28
 #define CELL_W 8
-#define CELL_H 10
+#define CELL_H 16
 
 #define BG RGB(12, 16, 28)
 #define FG RGB(205, 214, 232)
@@ -55,7 +55,7 @@ static void render(struct gwin *g) {
     gui_fill(g, 0, 0, g->w, g->h, BG);
     for (int r = 0; r < ROWS; r++) {
         for (int c = 0; c < COLS; c++) {
-            if (grid[r][c] != ' ') gui_char(g, 4 + c * CELL_W, 4 + r * CELL_H + 1, grid[r][c], FG, 1);
+            if (grid[r][c] != ' ') gui_char(g, 4 + c * CELL_W, 4 + r * CELL_H, grid[r][c], FG, 1);
         }
     }
     gui_fill(g, 4 + cx * CELL_W, 4 + cy * CELL_H + CELL_H - 2, CELL_W, 2, RGB(120, 220, 160));

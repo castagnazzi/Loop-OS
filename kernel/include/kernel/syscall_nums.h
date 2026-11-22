@@ -69,6 +69,8 @@
 struct sys_dirent {
     char name[64];
     uint32_t is_dir;
+    uint32_t pad;
+    uint64_t size;        /* files: size in bytes */
 };
 
 struct sys_taskinfo {

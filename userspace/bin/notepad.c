@@ -34,17 +34,17 @@ static void render(struct gwin *g) {
     gui_fill(g, 0, 0, W, H, BG);
     gui_fill(g, 0, 0, W, TOP, RGB(226, 228, 236));
     gui_button(g, 4, 4, 70, 22, "Salvar", 0);
-    gui_text(g, 84, 8, path, RGB(40, 44, 60), 1);
-    gui_text(g, W - 8 * (int)strlen(status) - 8, 8, status, RGB(30, 120, 60), 1);
+    gui_text(g, 84, 7, path, RGB(40, 44, 60), 1);
+    gui_text(g, W - 8 * (int)strlen(status) - 8, 7, status, RGB(30, 120, 60), 1);
 
     int x = 6, y = TOP + 6;
     for (int i = 0; i < len; i++) {
-        if (text[i] == '\n' || x > W - 14) { x = 6; y += 11; if (text[i] == '\n') continue; }
-        if (y > H - 12) break;
+        if (text[i] == '\n' || x > W - 14) { x = 6; y += 16; if (text[i] == '\n') continue; }
+        if (y > H - 18) break;
         gui_char(g, x, y, text[i], RGB(20, 24, 36), 1);
         x += 8;
     }
-    gui_fill(g, x, y + 9, 8, 2, RGB(40, 90, 200));
+    gui_fill(g, x, y + 14, 8, 2, RGB(40, 90, 200));
     gui_present(g);
 }
 

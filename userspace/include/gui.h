@@ -16,6 +16,8 @@ struct gwin {
     uint32_t *px;
 };
 
+/* Text is drawn with the 8x16 Latin-1 font; scale n gives characters 8n wide and 16n tall. */
+
 /* Create a window with a w x h client area. Returns 0, or -1 on failure. */
 int gui_open(struct gwin *g, int w, int h, const char *title);
 void gui_close(struct gwin *g);

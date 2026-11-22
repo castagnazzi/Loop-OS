@@ -19,6 +19,7 @@
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include "../drivers/font8x8.h"
+#include "../drivers/font8x16.h"
 #include "../drivers/logo.h"
 
 #define MAX_WINDOWS 16
@@ -129,6 +130,23 @@ static void text(int x, int y, const char *s, uint32_t c, int scale) {
     for (; *s; s++, x += 8 * scale) {
         if (x + 8 * scale <= clip_x0 || x >= clip_x1) continue;
         glyph(x, y, *s, c, scale);
+    }
+}
+
+/* Readable 8x16 text (Latin-1) */
+static void text16(int x, int y, const char *s, uint32_t c) {
+    for (; *s; s++, x += 8) {
+        if (x + 8 <= clip_x0 || x >= clip_x1) continue;
+        const uint8_t *g = font8x16[(unsigned char)*s];
+        for (int r = 0; r < 16; r++) {
+            int py = y + r;
+            if (py < clip_y0 || py >= clip_y1 || !g[r]) continue;
+            uint32_t *row = bb + (size_t)py * sw;
+            for (int col = 0; col < 8; col++) {
+                int px = x + col;
+                if (((g[r] >> col) & 1) && px >= clip_x0 && px < clip_x1) row[px] = c;
+            }
+        }
     }
 }
 
@@ -413,7 +431,7 @@ static void draw_window(int slot) {
 
     fill(w->x, w->y, ow, oh, C_BORDER);
     fill(w->x + 1, w->y + 1, ow - 2, TITLE_H - 1, tc);
-    text(w->x + 8, w->y + 7, w->title, C_TEXT, 1);
+    text16(w->x + 8, w->y + 3, w->title, C_TEXT);
 
     /* minimize and close buttons */
     int bx = w->x + ow - 20;
@@ -465,7 +483,7 @@ static void draw_taskbar(void) {
     int hot = menu_open;
     fill(START_X, y + 4, START_W, TASKBAR_H - 8, hot ? C_MENU_HOT : C_BTN);
     logo_small(START_X + 6, y + 6, TASKBAR_H - 12);
-    text(START_X + 34, y + 14, "Iniciar", C_TEXT, 1);
+    text16(START_X + 34, y + 10, "Iniciar", C_TEXT);
 
     /* window buttons, in creation order */
     int bw = task_button_w();
@@ -480,7 +498,7 @@ static void draw_taskbar(void) {
         int i = 0;
         while (wins[s].title[i] && i < maxc) { label[i] = wins[s].title[i]; i++; }
         label[i] = '\0';
-        text(bx + 6, y + 14, label, wins[s].minimized ? C_DIM : C_TEXT, 1);
+        text16(bx + 6, y + 10, label, wins[s].minimized ? C_DIM : C_TEXT);
         bx += bw + 4;
     }
 
@@ -499,7 +517,7 @@ static void draw_menu(void) {
     for (int i = 0; i < menu_count; i++) {
         int iy = y0 + 4 + i * MENU_ITEM_H;
         if (i == menu_hot) fill(START_X + 4, iy, MENU_W - 8, MENU_ITEM_H, C_MENU_HOT);
-        text(START_X + 16, iy + (MENU_ITEM_H - 8) / 2, menu[i].label, C_TEXT, 1);
+        text16(START_X + 16, iy + (MENU_ITEM_H - 16) / 2, menu[i].label, C_TEXT);
     }
 }
 

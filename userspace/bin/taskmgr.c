@@ -3,8 +3,8 @@
 #include <gui.h>
 
 #define W 380
-#define H 320
-#define ROW 14
+#define H 380
+#define ROW 18
 #define LIST_Y 30
 #define MAX_ROWS 16
 
@@ -31,10 +31,10 @@ static void refresh(void) {
 
 static void render(struct gwin *g) {
     gui_fill(g, 0, 0, W, H, RGB(30, 34, 50));
-    gui_text(g, 8, 10, "PID  Nome                Estado", RGB(150, 170, 200), 1);
+    gui_text(g, 8, 7, "PID  Nome                Estado", RGB(150, 170, 200), 1);
     for (int i = 0; i < nrows; i++) {
         int y = LIST_Y + i * ROW;
-        if (i == selected) gui_fill(g, 4, y - 2, W - 8, ROW, RGB(52, 104, 190));
+        if (i == selected) gui_fill(g, 4, y - 1, W - 8, ROW, RGB(52, 104, 190));
         char line[64];
         snprintf(line, sizeof(line), "%-4d %-19s %s", rows[i].pid, rows[i].name, state_name(rows[i].state));
         gui_text(g, 8, y, line, RGB(235, 240, 250), 1);
@@ -42,7 +42,7 @@ static void render(struct gwin *g) {
     gui_button(g, 8, H - 34, 110, 26, "Encerrar", 0);
     char info[32];
     snprintf(info, sizeof(info), "%d tarefas", nrows);
-    gui_text(g, W - 8 - 8 * (int)strlen(info), H - 25, info, RGB(150, 170, 200), 1);
+    gui_text(g, W - 8 - 8 * (int)strlen(info), H - 29, info, RGB(150, 170, 200), 1);
     gui_present(g);
 }
 
@@ -66,8 +66,8 @@ int main(void) {
                     selected = -1;
                     refresh();
                 }
-            } else if (ev.b >= LIST_Y - 2 && ev.b < LIST_Y - 2 + nrows * ROW) {
-                selected = (ev.b - (LIST_Y - 2)) / ROW;
+            } else if (ev.b >= LIST_Y - 1 && ev.b < LIST_Y - 1 + nrows * ROW) {
+                selected = (ev.b - (LIST_Y - 1)) / ROW;
             }
         }
         if (r < 0) return 0;

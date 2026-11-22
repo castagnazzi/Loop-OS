@@ -184,6 +184,7 @@ static long sys_readdir(int fdn, uint64_t ubuf) {
     memset(&d, 0, sizeof(d));
     strncpy(d.name, e->name, sizeof(d.name) - 1);
     d.is_dir = (uint32_t)e->is_dir;
+    d.size = e->size;
     f->off++;
     if (copy_to_user(ubuf, &d, sizeof(d)) != 0) return -SYS_EFAULT;
     return 1;
