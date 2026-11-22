@@ -136,9 +136,10 @@ loop-os/
 |------|----------|
 | 0 - Toolchain e build | Pronta: `make toolchain`, `make`, `make iso`, `make run` |
 | 1 - Kernel core | Pronta: GDT/IDT, PIC, PMM, VMM, heap (`kmalloc`/`kfree`), timer, teclado, mouse, framebuffer + console. 69 testes de memória rodam no boot |
-| 2 - Drivers e FS | Parcial: initrd somente leitura (tar). Faltam PCI, VFS completo, FAT32, ext2 |
-| 3 - Userspace básico | Funcionando em ring 3: SYSCALL/SYSRET, processos, ELF, scheduler preemptivo, `init` e `sh`. Sem `fork`/`execve` (há `spawn`), sem FS gravável |
-| 4 a 7 | Não iniciadas |
+| 2 - Drivers e FS | Parcial: ramfs gravavel carregado do initrd (arquivos, pastas, `mkdir`/`rm`/`cp`), sem persistencia. Faltam PCI, disco, FAT32, ext2, rede |
+| 3 - Userspace básico | Funcionando em ring 3: SYSCALL/SYSRET, processos, `fork`/`execve`/`spawn`, pipes, ELF, scheduler preemptivo, `init` e `sh` (com `|`, `<`, `>`, `>>`, `&`) |
+| 4 - Desktop | Funcionando: compositor no kernel, janelas arrastaveis, barra de tarefas com relogio (RTC), menu Iniciar (`/etc/menu`), libgui e apps: terminal, bloco de notas, arquivos, calculadora, gerenciador de tarefas |
+| 5 a 7 | Não iniciadas (rede, audio, apps maiores) |
 
 ### Como rodar
 
@@ -149,13 +150,15 @@ make iso            # kernel + userspace + initrd + ISO
 qemu-system-x86_64 -cdrom build/loop-os.iso -m 256 -serial stdio
 ```
 
-O kernel inicia `/sbin/init`, que inicia `/bin/sh`. Programas em `/bin`:
-`ls cat hello ps kill sleep spin crash`. Quando o `init` termina, o kernel cai no
-seu shell interno (`help` lista os comandos).
+Com framebuffer, o kernel abre o desktop e lanca o Terminal (que roda `/bin/sh`).
+Programas em `/bin`: `ls cat cp mkdir rm wc hello ps kill sleep spin crash` e os
+apps graficos `term notepad files calc taskmgr`. Os itens do menu Iniciar ficam em
+`rootfs/etc/menu` (`Rotulo|comando`). O relogio mostra a hora do RTC: use
+`-rtc base=localtime` no QEMU para a hora local.
 
 O código do userspace está em `userspace/` (ulib + programas). O scaffold antigo,
 que nunca compilou, ficou em `userspace/legacy/`. Os arquivos de `rootfs/` entram
-no initrd. Sobre sistemas de arquivos: o initrd é somente leitura.
+no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 
 ## 🚀 Fases de Desenvolvimento
 

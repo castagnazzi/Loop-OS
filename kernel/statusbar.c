@@ -12,6 +12,9 @@
 #define MOUSE_REFRESH_TICKS 5
 
 static volatile int mouse_dirty = 0;
+static volatile int enabled = 1;
+
+void statusbar_enable(int on) { enabled = on; }
 
 static void draw_uptime(uint64_t secs) {
     char buf[32];
@@ -42,7 +45,7 @@ void statusbar_mouse_changed(void) {
 }
 
 void statusbar_tick(uint64_t tick) {
-    if (!fb_ready()) return;
+    if (!enabled || !fb_ready()) return;
     if (tick % TICKS_PER_SEC == 0) draw_uptime(tick / TICKS_PER_SEC);
     if (mouse_dirty && tick % MOUSE_REFRESH_TICKS == 0) {
         mouse_dirty = 0;

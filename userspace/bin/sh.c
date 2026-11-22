@@ -148,7 +148,7 @@ static int run_builtin(int argc, char **argv) {
         }
         putchar('\n');
     } else if (!strcmp(argv[0], "clear")) {
-        clear_screen();
+        write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
     } else if (!strcmp(argv[0], "uptime")) {
         unsigned long ms = uptime_ms();
         printf("up %lu.%03lu s\n", ms / 1000, ms % 1000);

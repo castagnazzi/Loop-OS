@@ -70,3 +70,8 @@ long pipe_write(struct pipe *p, const void *buf, size_t n) {
     }
     return (long)done;
 }
+
+long pipe_avail(struct pipe *p) {
+    if (p->count > 0) return (long)p->count;
+    return p->writers <= 0 ? -1 : 0;
+}

@@ -24,7 +24,7 @@ CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra \
 
 LDFLAGS  := -nostdlib -static -z max-page-size=0x1000 -T user.ld
 
-PROGS    := init sh hello ls cat sleep ps kill spin crash mkdir rm cp wc
+PROGS    := init sh hello ls cat sleep ps kill spin crash mkdir rm cp wc term notepad files calc taskmgr
 BINS     := $(addprefix $(BUILD)/bin/,$(PROGS))
 LIB      := $(BUILD)/libulib.a
 CRT0     := $(BUILD)/crt0.o
@@ -40,10 +40,14 @@ $(BUILD)/ulib.o: lib/ulib.c include/ulib.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(LIB): $(BUILD)/ulib.o
+$(BUILD)/gui.o: lib/gui.c include/gui.h include/ulib.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(LIB): $(BUILD)/ulib.o $(BUILD)/gui.o
 	$(AR) rcs $@ $^
 
-$(BUILD)/obj/%.o: bin/%.c include/ulib.h
+$(BUILD)/obj/%.o: bin/%.c include/ulib.h include/gui.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

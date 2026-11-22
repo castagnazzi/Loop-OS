@@ -46,6 +46,7 @@ void fd_dup_into(struct fd *dst, const struct fd *src);   /* shares the file/pip
 void fd_release(struct fd *f);                            /* close */
 int pipe_create(struct fd *rd, struct fd *wr);            /* 0 or -1 */
 long pipe_read(struct pipe *p, void *buf, size_t n);      /* blocks; 0 = EOF */
+long pipe_avail(struct pipe *p);                        /* bytes ready, -1 at EOF */
 long pipe_write(struct pipe *p, const void *buf, size_t n);  /* -32 (EPIPE) w/o readers */
 
 struct task {

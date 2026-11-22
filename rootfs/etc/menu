@@ -1,0 +1,7 @@
+# Start menu: Label|command [argument]    (@reboot restarts the machine)
+Terminal|/bin/term
+Bloco de Notas|/bin/notepad /tmp/nota.txt
+Arquivos|/bin/files /
+Calculadora|/bin/calc
+Gerenciador de Tarefas|/bin/taskmgr
+Reiniciar|@reboot

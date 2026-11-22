@@ -10,6 +10,8 @@
 #include <kernel/drivers/fb.h>
 #include <kernel/drivers/mouse.h>
 #include <kernel/kshell.h>
+#include <kernel/gui.h>
+#include <kernel/statusbar.h>
 #include <kernel/task.h>
 #include <kernel/arch/x86_64/syscall.h>
 #include <kernel/mm/mm_test.h>
@@ -213,7 +215,15 @@ void kernel_main_higher_half(void) {
     /* Interrupts on: timer ticks, keyboard and mouse input start flowing */
     interrupts_enable();
 
-    /* Userspace: run /sbin/init (which starts the shell) and wait for it */
+    /* Graphical desktop: it owns the screen from here on */
+    if (fb_ready() && wm_init() == 0) {
+        kprintf("Starting the desktop\n");
+        kprintf_set_sink(NULL);
+        statusbar_enable(0);
+        wm_run();
+    }
+
+    /* Text mode: run /sbin/init (which starts the shell) and wait for it */
     struct vnode *init_node = vfs_lookup("/sbin/init");
     if (init_node && !init_node->is_dir) {
         const char *init_argv[] = { "/sbin/init" };

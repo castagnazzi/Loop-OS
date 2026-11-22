@@ -382,8 +382,22 @@ static void con_erase_cell(int cx, int cy) {
     fb_fill_rect(con_x + cx * con_cell, con_y + cy * con_line, con_cell, con_line, con_bg);
 }
 
+/* Tiny ANSI subset: ESC [ 2 J clears the screen, ESC [ H homes the cursor */
+static int esc_state = 0;      /* 0 normal, 1 after ESC, 2 inside "ESC [" */
+static int esc_arg = 0;
+
 void fbcon_putc(char c) {
     if (!con_ready) return;
+
+    if (esc_state == 1) { esc_state = (c == '[') ? 2 : 0; esc_arg = 0; return; }
+    if (esc_state == 2) {
+        if (c >= '0' && c <= '9') { esc_arg = esc_arg * 10 + (c - '0'); return; }
+        if (c == 'J' && esc_arg == 2) fbcon_clear();
+        else if (c == 'H') con_cx = con_cy = 0;
+        if (c != ';') esc_state = 0;
+        return;
+    }
+    if (c == 0x1B) { esc_state = 1; return; }
 
     switch (c) {
     case '\n':

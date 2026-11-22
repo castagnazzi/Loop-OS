@@ -3,6 +3,7 @@
 #include <kernel/task.h>
 #include <kernel/elf.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/gui.h>
 #include <kernel/arch/x86_64/gdt.h>
 #include <kernel/arch/x86_64/syscall.h>
 #include <kernel/drivers/keyboard.h>
@@ -180,6 +181,7 @@ void task_timer_tick(struct trap_frame *tf) {
 /* Termination */
 static void terminate(struct task *t, int code) {
     t->exit_code = code;
+    wm_task_exit(t->pid);
     for (int i = 0; i < MAX_FDS; i++) {
         if (t->fds[i].kind != FD_NONE) fd_release(&t->fds[i]);
     }

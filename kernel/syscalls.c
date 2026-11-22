@@ -9,6 +9,8 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/arch/x86_64/syscall.h>
 #include <kernel/drivers/fb.h>
+#include <kernel/drivers/rtc.h>
+#include <kernel/gui.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/mm/vmm.h>
@@ -334,6 +336,46 @@ static long sys_taskinfo(int index, uint64_t ubuf) {
 }
 
 /* ---------------------------------------------------------------- */
+/* Windows */
+static long sys_win_create(uint64_t w, uint64_t h, uint64_t utitle) {
+    char title[32];
+    title[0] = '\0';
+    copy_str_from_user(title, utitle, sizeof(title));
+    return wm_create(current_task->pid, (int)w, (int)h, title);
+}
+
+static long sys_win_present(int id, uint64_t ubuf) {
+    int w, h;
+    uint32_t *px = wm_surface(id, current_task->pid, &w, &h);
+    if (!px) return -SYS_EBADF;
+    if (copy_from_user(px, ubuf, (size_t)w * h * 4) != 0) return -SYS_EFAULT;
+    wm_window_changed(id);
+    return 0;
+}
+
+static long sys_win_event(int id, uint64_t uev, uint64_t block) {
+    struct win_event ev;
+    for (;;) {
+        int r = wm_next_event(id, current_task->pid, &ev);
+        if (r < 0) return -SYS_EBADF;
+        if (r > 0) {
+            if (copy_to_user(uev, &ev, sizeof(ev)) != 0) return -SYS_EFAULT;
+            return 1;
+        }
+        if (!block) return 0;
+        task_block(W_SLEEP, 1);
+    }
+}
+
+static long sys_fd_avail(int fdn) {
+    struct fd *f = get_fd(fdn);
+    if (!f) return -SYS_EBADF;
+    if (f->kind == FD_PIPE_R) return pipe_avail(f->pipe);
+    if (f->kind == FD_CONSOLE_IN) return keyboard_has_key() ? 1 : 0;
+    return -SYS_EBADF;
+}
+
+/* ---------------------------------------------------------------- */
 void syscall_dispatch(struct syscall_frame *f) {
     long ret;
     uint64_t a1 = f->rdi, a2 = f->rsi, a3 = f->rdx;
@@ -361,6 +403,17 @@ void syscall_dispatch(struct syscall_frame *f) {
         break;
     case SYS_CLEAR:     fbcon_clear(); ret = 0; break;
     case SYS_TASKINFO:  ret = sys_taskinfo((int)a1, a2); break;
+    case SYS_WIN_CREATE:  ret = sys_win_create(a1, a2, a3); break;
+    case SYS_WIN_PRESENT: ret = sys_win_present((int)a1, a2); break;
+    case SYS_WIN_EVENT:   ret = sys_win_event((int)a1, a2, a3); break;
+    case SYS_WIN_DESTROY: ret = wm_destroy((int)a1, current_task->pid); break;
+    case SYS_FD_AVAIL:    ret = sys_fd_avail((int)a1); break;
+    case SYS_WALLTIME: {
+        struct rtc_time t;
+        rtc_read(&t);
+        ret = t.hour * 3600 + t.minute * 60 + t.second;
+        break;
+    }
     case SYS_PIPE:      ret = sys_pipe(a1); break;
     case SYS_DUP2:      ret = sys_dup2((int)a1, (int)a2); break;
     case SYS_FORK:      ret = task_fork(f); break;

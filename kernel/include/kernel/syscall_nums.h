@@ -38,6 +38,13 @@
 #define SYS_CLEAR       104  /* clear() the console */
 #define SYS_TASKINFO    105  /* taskinfo(index, struct sys_taskinfo *) */
 
+#define SYS_WIN_CREATE  110  /* win_create(w, h, title) -> window id */
+#define SYS_WIN_PRESENT 111  /* win_present(id, pixels) - copies w*h 0x00RRGGBB pixels */
+#define SYS_WIN_EVENT   112  /* win_event(id, struct win_event *, block) -> 1, 0 (none), < 0 */
+#define SYS_WIN_DESTROY 113  /* win_destroy(id) */
+#define SYS_FD_AVAIL    114  /* fd_avail(fd): bytes readable without blocking, -1 at EOF */
+#define SYS_WALLTIME    115  /* walltime() -> hour*3600 + minute*60 + second */
+
 /* errno values used by the kernel */
 #define SYS_ENOENT   2
 #define SYS_ENOEXEC  8
