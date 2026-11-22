@@ -68,6 +68,16 @@ void irq_register_handler(uint8_t irq, irq_handler_t handler);
 static inline void interrupts_enable(void) { asm volatile("sti"); }
 static inline void interrupts_disable(void) { asm volatile("cli"); }
 
+/* Critical sections: disable interrupts, remembering whether they were on */
+static inline uint64_t interrupts_save(void) {
+    uint64_t flags;
+    asm volatile("pushfq; cli; popq %0" : "=r"(flags) : : "memory");
+    return flags;
+}
+static inline void interrupts_restore(uint64_t flags) {
+    if (flags & 0x200) asm volatile("sti" : : : "memory");
+}
+
 /* Send EOI to PIC */
 void pic_send_eoi(uint8_t irq);
 

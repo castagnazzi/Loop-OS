@@ -1,6 +1,7 @@
 /* Linear framebuffer driver and text console */
 
 #include <kernel/drivers/fb.h>
+#include <kernel/arch/x86_64/idt.h>
 #include <kernel/limine.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
@@ -51,9 +52,114 @@ static inline uint32_t *row_ptr(int y) {
     return (uint32_t *)(fb_base + (uint64_t)y * fb_pitch);
 }
 
+/* ------------------------------------------------------------------ */
+/* Mouse cursor: an arrow drawn over the screen with the pixels underneath
+ * saved, so moving it restores the background. Drawing primitives hide it
+ * when they touch its area; all of this runs with interrupts disabled so
+ * the mouse IRQ cannot interleave with a half-finished draw. */
+#define CUR_W 12
+#define CUR_H 19
+static const char *cursor_shape[CUR_H] = {
+    "X           ",
+    "XX          ",
+    "X.X         ",
+    "X..X        ",
+    "X...X       ",
+    "X....X      ",
+    "X.....X     ",
+    "X......X    ",
+    "X.......X   ",
+    "X........X  ",
+    "X.........X ",
+    "X......XXXXX",
+    "X...X..X    ",
+    "X..X X..X   ",
+    "X.X  X..X   ",
+    "XX    X..X  ",
+    "X     X..X  ",
+    "       X..X ",
+    "       XXX  ",
+};
+static uint32_t cursor_under[CUR_W * CUR_H];
+static int cursor_x = 0, cursor_y = 0;
+static int cursor_enabled = 0;   /* feature switched on */
+static int cursor_visible = 0;   /* currently drawn on screen */
+
+static void cursor_draw(void) {
+    uint32_t black = fb_rgb(0, 0, 0), white = fb_rgb(255, 255, 255);
+    for (int j = 0; j < CUR_H; j++) {
+        for (int i = 0; i < CUR_W; i++) {
+            int px = cursor_x + i, py = cursor_y + j;
+            if (px < 0 || py < 0 || px >= (int)fb_w || py >= (int)fb_h) continue;
+            cursor_under[j * CUR_W + i] = row_ptr(py)[px];
+            char c = cursor_shape[j][i];
+            if (c == 'X') row_ptr(py)[px] = black;
+            else if (c == '.') row_ptr(py)[px] = white;
+        }
+    }
+    cursor_visible = 1;
+}
+
+static void cursor_erase(void) {
+    if (!cursor_visible) return;
+    for (int j = 0; j < CUR_H; j++) {
+        for (int i = 0; i < CUR_W; i++) {
+            int px = cursor_x + i, py = cursor_y + j;
+            if (px < 0 || py < 0 || px >= (int)fb_w || py >= (int)fb_h) continue;
+            if (cursor_shape[j][i] != ' ') row_ptr(py)[px] = cursor_under[j * CUR_W + i];
+        }
+    }
+    cursor_visible = 0;
+}
+
+static inline int cursor_overlaps(int x, int y, int w, int h) {
+    return cursor_visible && x < cursor_x + CUR_W && x + w > cursor_x &&
+           y < cursor_y + CUR_H && y + h > cursor_y;
+}
+
+void fb_cursor_enable(int x, int y) {
+    if (!fb_base) return;
+    uint64_t f = interrupts_save();
+    cursor_erase();
+    cursor_x = x; cursor_y = y;
+    cursor_enabled = 1;
+    cursor_draw();
+    interrupts_restore(f);
+}
+
+void fb_cursor_move(int x, int y) {
+    if (!cursor_enabled) return;
+    uint64_t f = interrupts_save();
+    cursor_erase();
+    cursor_x = x; cursor_y = y;
+    cursor_draw();
+    interrupts_restore(f);
+}
+
+/* Hide/show around raw framebuffer writes done outside the primitives */
+int fb_cursor_hide(void) {
+    uint64_t f = interrupts_save();
+    int was = cursor_visible;
+    cursor_erase();
+    interrupts_restore(f);
+    return was;
+}
+
+void fb_cursor_show(void) {
+    if (!cursor_enabled) return;
+    uint64_t f = interrupts_save();
+    if (!cursor_visible) cursor_draw();
+    interrupts_restore(f);
+}
+
 void fb_putpixel(int x, int y, uint32_t color) {
     if (!fb_base || x < 0 || y < 0 || x >= (int)fb_w || y >= (int)fb_h) return;
+    uint64_t f = interrupts_save();
+    int redraw = cursor_overlaps(x, y, 1, 1);
+    if (redraw) cursor_erase();
     row_ptr(y)[x] = color;
+    if (redraw) cursor_draw();
+    interrupts_restore(f);
 }
 
 void fb_fill_rect(int x, int y, int w, int h, uint32_t color) {
@@ -64,10 +170,15 @@ void fb_fill_rect(int x, int y, int w, int h, uint32_t color) {
     if (y + h > (int)fb_h) h = (int)fb_h - y;
     if (w <= 0 || h <= 0) return;
 
+    uint64_t f = interrupts_save();
+    int redraw = cursor_overlaps(x, y, w, h);
+    if (redraw) cursor_erase();
     for (int j = 0; j < h; j++) {
         uint32_t *p = row_ptr(y + j) + x;
         for (int i = 0; i < w; i++) p[i] = color;
     }
+    if (redraw) cursor_draw();
+    interrupts_restore(f);
 }
 
 void fb_clear(uint32_t color) {
@@ -160,11 +271,19 @@ void fbcon_clear(void) {
 static void con_scroll(void) {
     int cell = 8 * con_scale;
     int move_rows = (con_rows - 1) * cell;
+
+    /* Raw copy below: keep the cursor (and its saved pixels) out of the way */
+    uint64_t f = interrupts_save();
+    int redraw = cursor_overlaps(con_x, con_y, con_cols * cell, con_rows * cell);
+    if (redraw) cursor_erase();
     for (int j = 0; j < move_rows; j++) {
         uint32_t *dst = row_ptr(con_y + j) + con_x;
         uint32_t *src = row_ptr(con_y + j + cell) + con_x;
         memmove(dst, src, (size_t)con_cols * cell * sizeof(uint32_t));
     }
+    if (redraw) cursor_draw();
+    interrupts_restore(f);
+
     fb_fill_rect(con_x, con_y + move_rows, con_cols * cell, cell, con_bg);
 }
 

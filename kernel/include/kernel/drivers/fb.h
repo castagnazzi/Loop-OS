@@ -28,6 +28,12 @@ void fb_clear(uint32_t color);
 void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg, int scale);
 void fb_draw_string(int x, int y, const char *s, uint32_t fg, uint32_t bg, int scale);
 
+/* Mouse cursor overlay (pixels underneath are saved/restored) */
+void fb_cursor_enable(int x, int y);
+void fb_cursor_move(int x, int y);
+int fb_cursor_hide(void);     /* returns 1 if it was visible */
+void fb_cursor_show(void);
+
 /* Simple boot screen: gradient background and a title bar.
  * Returns the y coordinate where free drawing space starts. */
 int fb_draw_boot_screen(void);

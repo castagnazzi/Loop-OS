@@ -8,6 +8,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/heap.h>
 #include <kernel/drivers/fb.h>
+#include <kernel/drivers/mouse.h>
 #include <kernel/kshell.h>
 #include <kernel/mm/mm_test.h>
 #include <kernel/arch/x86_64/gdt.h>
@@ -170,6 +171,11 @@ void kernel_main_higher_half(void) {
 
     /* Keyboard */
     keyboard_init();
+
+    /* Mouse + cursor overlay (needs the framebuffer for the cursor) */
+    if (fb_ready() && mouse_init((int)fb_width(), (int)fb_height()) == 0) {
+        fb_cursor_enable(mouse_x(), mouse_y());
+    }
 
     /* TODO: Initialize VFS, drivers, scheduler, userspace */
 

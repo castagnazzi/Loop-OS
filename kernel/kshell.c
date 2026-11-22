@@ -5,6 +5,7 @@
 #include <kernel/kshell.h>
 #include <kernel/drivers/fb.h>
 #include <kernel/drivers/keyboard.h>
+#include <kernel/drivers/mouse.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/heap.h>
@@ -30,6 +31,20 @@ static void draw_uptime(uint64_t secs) {
     fb_draw_string(x, 20, buf, fb_rgb(150, 220, 170), FB_TRANSPARENT, 2);
 }
 
+static void draw_mouse_status(void) {
+    if (!fb_ready() || !mouse_present()) return;
+    char buf[48];
+    uint8_t b = mouse_buttons();
+    ksnprintf(buf, sizeof(buf), "mouse %4d,%4d [%c%c%c]", mouse_x(), mouse_y(),
+              (b & MOUSE_BTN_LEFT) ? 'L' : '-',
+              (b & MOUSE_BTN_MIDDLE) ? 'M' : '-',
+              (b & MOUSE_BTN_RIGHT) ? 'R' : '-');
+    int w = (int)(strlen(buf) * 8);
+    int x = (int)fb_width() - w - 24;
+    fb_fill_rect(x - 4, 42, w + 8, 10, fb_rgb(24, 28, 44));
+    fb_draw_string(x, 43, buf, fb_rgb(150, 170, 200), FB_TRANSPARENT, 1);
+}
+
 /* ---------------------------------------------------------------- */
 /* Builtins */
 static void cmd_help(void) {
@@ -39,6 +54,7 @@ static void cmd_help(void) {
     kprintf("  uptime        time since boot\n");
     kprintf("  mem           memory usage (PMM and heap)\n");
     kprintf("  memtest       run the memory self test again\n");
+    kprintf("  mouse         mouse position and buttons\n");
     kprintf("  clear         clear the screen\n");
     kprintf("  version       kernel info\n");
     kprintf("  reboot        restart the machine\n");
@@ -62,6 +78,16 @@ static void cmd_mem(void) {
     kprintf("Heap:     %lu KB total, %lu KB used, %lu KB free (%lu blocks)\n",
             (unsigned long)(hs.total / 1024), (unsigned long)(hs.used / 1024),
             (unsigned long)(hs.free / 1024), (unsigned long)hs.blocks);
+}
+
+static void cmd_mouse(void) {
+    if (!mouse_present()) {
+        kprintf("no mouse\n");
+        return;
+    }
+    uint8_t b = mouse_buttons();
+    kprintf("mouse at %d,%d buttons: left=%d middle=%d right=%d\n", mouse_x(), mouse_y(),
+            !!(b & MOUSE_BTN_LEFT), !!(b & MOUSE_BTN_MIDDLE), !!(b & MOUSE_BTN_RIGHT));
 }
 
 static void cmd_reboot(void) {
@@ -88,6 +114,7 @@ static void run_command(char *line) {
     else if (!strcmp(line, "uptime")) cmd_uptime();
     else if (!strcmp(line, "mem")) cmd_mem();
     else if (!strcmp(line, "memtest")) mm_selftest();
+    else if (!strcmp(line, "mouse")) cmd_mouse();
     else if (!strcmp(line, "clear")) fbcon_clear();
     else if (!strcmp(line, "version")) kprintf("Loop-OS kernel (x86_64), phase 1\n");
     else if (!strcmp(line, "reboot")) cmd_reboot();
@@ -99,6 +126,7 @@ void kshell_run(void) {
     char line[LINE_MAX];
     size_t len = 0;
     uint64_t last_sec = (uint64_t)-1;
+    uint32_t last_mouse = (uint32_t)-1;
 
     kprintf("\nLoop-OS shell. Type 'help' for commands.\n");
     kprintf("loop-os> ");
@@ -109,6 +137,11 @@ void kshell_run(void) {
         if (sec != last_sec) {
             last_sec = sec;
             draw_uptime(sec);
+        }
+        uint32_t ms = mouse_serial();
+        if (ms != last_mouse) {
+            last_mouse = ms;
+            draw_mouse_status();
         }
 
         int c = keyboard_getchar();
