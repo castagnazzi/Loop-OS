@@ -5,6 +5,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/fat32.h>
 #include <kernel/fs/ntfs.h>
+#include <kernel/fs/ext.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 
@@ -16,6 +17,7 @@ static void try_mount(struct blkdev *d) {
     const char *fsname = NULL;
     if (fat32_mount(d, path) == 0) fsname = "fat32";
     else if (ntfs_mount(d, path) == 0) fsname = "ntfs";
+    else if (ext_mount(d, path) == 0) fsname = "ext";
     if (fsname) {
         strcpy(d->fs, fsname);
         strcpy(d->mount, path);

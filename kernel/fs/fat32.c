@@ -136,7 +136,7 @@ static int fat_populate(struct vnode *dir) {
                 for (int i = 0; i < 13; i++) {
                     uint16_t ch = le16(e + pos[i]);
                     int at = (ord - 1) * 13 + i;
-                    if (at < 255) lfn[at] = (ch == 0 || ch == 0xFFFF) ? 0 : (ch < 128 ? (char)ch : '?');
+                    if (at < 255) lfn[at] = (ch == 0 || ch == 0xFFFF) ? 0 : (ch < 256 ? (char)ch : '?');
                 }
                 continue;
             }

@@ -18,7 +18,7 @@
 #include <kernel/string.h>
 #include <stdint.h>
 
-#define MAX_IO_CHUNK 256
+#define MAX_IO_CHUNK 2048
 #define MAX_ARGS 16
 #define ARG_LEN 64
 

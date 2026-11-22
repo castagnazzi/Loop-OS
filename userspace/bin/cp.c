@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
         printf("cp: cannot create %s\n", argv[2]);
         return 1;
     }
-    char buf[256];
+    char buf[2048];
     ssize_t n;
     while ((n = read(in, buf, sizeof(buf))) > 0) write(out, buf, (size_t)n);
     close(in);
