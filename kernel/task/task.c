@@ -2,7 +2,7 @@
 
 #include <kernel/task.h>
 #include <kernel/elf.h>
-#include <kernel/fs/initrd.h>
+#include <kernel/fs/vfs.h>
 #include <kernel/arch/x86_64/gdt.h>
 #include <kernel/arch/x86_64/syscall.h>
 #include <kernel/drivers/keyboard.h>
@@ -23,6 +23,7 @@
 
 extern void switch_to(uint64_t *old_rsp_save, uint64_t new_rsp);
 extern void user_entry_stub(void);
+extern void fork_return_stub(void);
 
 static struct task tasks[MAX_TASKS];
 struct task *current_task = NULL;
@@ -179,6 +180,9 @@ void task_timer_tick(struct trap_frame *tf) {
 /* Termination */
 static void terminate(struct task *t, int code) {
     t->exit_code = code;
+    for (int i = 0; i < MAX_FDS; i++) {
+        if (t->fds[i].kind != FD_NONE) fd_release(&t->fds[i]);
+    }
 
     /* Children lose their parent: nobody will wait for them */
     for (int i = 0; i < MAX_TASKS; i++) {
@@ -283,24 +287,16 @@ static uint64_t build_user_stack(vmm_space_t *sp, const char *const *argv, int a
     return top;
 }
 
-int task_spawn(const char *path, const char *const *argv, int argc) {
-    char abs[PATH_BUF];
-    task_resolve_path(path, abs, sizeof(abs));
-
-    struct initrd_node node;
-    if (initrd_lookup(abs, &node) != 0 || node.is_dir) return -ENOENT;
-
-    int slot = -1;
-    for (int i = 1; i < MAX_TASKS; i++) {
-        if (tasks[i].state == T_UNUSED) { slot = i; break; }
-    }
-    if (slot < 0) return -EAGAIN;
+/* Load an executable and build a fresh user stack for it. */
+static int build_image(const char *abs, const char *const *argv, int argc,
+                       vmm_space_t **sp_out, uint64_t *entry, uint64_t *brk, uint64_t *user_rsp) {
+    struct vnode *node = vfs_lookup(abs);
+    if (!node || node->is_dir) return -ENOENT;
 
     vmm_space_t *sp = vmm_space_create();
     if (!sp) return -ENOMEM;
 
-    uint64_t entry, brk;
-    if (elf_load(sp, node.data, node.size, &entry, &brk) != 0) {
+    if (elf_load(sp, node->data, node->size, entry, brk) != 0) {
         vmm_space_destroy(sp);
         return -ENOEXEC;
     }
@@ -313,7 +309,49 @@ int task_spawn(const char *path, const char *const *argv, int argc) {
             return -ENOMEM;
         }
     }
-    uint64_t user_rsp = build_user_stack(sp, argv, argc);
+    *user_rsp = build_user_stack(sp, argv, argc);
+    *sp_out = sp;
+    return 0;
+}
+
+static void set_name(struct task *t, const char *abs) {
+    const char *base = abs;
+    for (const char *c = abs; *c; c++) if (*c == '/') base = c + 1;
+    memset(t->name, 0, sizeof(t->name));
+    strncpy(t->name, base, TASK_NAME_MAX - 1);
+}
+
+static int free_slot(void) {
+    for (int i = 1; i < MAX_TASKS; i++) {
+        if (tasks[i].state == T_UNUSED) return i;
+    }
+    return -1;
+}
+
+/* Fresh tasks inherit stdin/stdout/stderr from the parent (so pipes and
+ * redirections survive spawn); the boot task has none and uses the console. */
+static void inherit_std_fds(struct task *t) {
+    for (int i = 0; i < 3; i++) {
+        struct fd *src = &current_task->fds[i];
+        if (src->kind != FD_NONE) {
+            fd_dup_into(&t->fds[i], src);
+        } else {
+            t->fds[i].kind = i == 0 ? FD_CONSOLE_IN : FD_CONSOLE_OUT;
+        }
+    }
+}
+
+int task_spawn(const char *path, const char *const *argv, int argc) {
+    char abs[PATH_BUF];
+    task_resolve_path(path, abs, sizeof(abs));
+
+    int slot = free_slot();
+    if (slot < 0) return -EAGAIN;
+
+    vmm_space_t *sp;
+    uint64_t entry, brk, user_rsp;
+    int r = build_image(abs, argv, argc, &sp, &entry, &brk, &user_rsp);
+    if (r != 0) return r;
 
     void *ks = vmm_alloc(KSTACK_PAGES, VMM_KERNEL_FLAGS | VMM_FLAG_NX);
     if (!ks) {
@@ -344,15 +382,79 @@ int task_spawn(const char *path, const char *const *argv, int argc) {
     t->rsp = (uint64_t)k;
     t->brk_start = t->brk = brk;
     strcpy(t->cwd, current_task->cwd);
-
-    const char *base = abs;
-    for (const char *c = abs; *c; c++) if (*c == '/') base = c + 1;
-    strncpy(t->name, base, TASK_NAME_MAX - 1);
-
-    t->fds[0].kind = FD_CONSOLE_IN;
-    t->fds[1].kind = FD_CONSOLE_OUT;
-    t->fds[2].kind = FD_CONSOLE_OUT;
+    set_name(t, abs);
+    inherit_std_fds(t);
 
     t->state = T_READY;
     return t->pid;
+}
+
+int task_fork(const struct syscall_frame *f) {
+    struct task *parent = current_task;
+    if (!parent->space) return -EINVAL;
+    int slot = free_slot();
+    if (slot < 0) return -EAGAIN;
+
+    vmm_space_t *sp = vmm_space_clone(parent->space);
+    if (!sp) return -ENOMEM;
+
+    void *ks = vmm_alloc(KSTACK_PAGES, VMM_KERNEL_FLAGS | VMM_FLAG_NX);
+    if (!ks) {
+        vmm_space_destroy(sp);
+        return -ENOMEM;
+    }
+    uint64_t ktop = (uint64_t)ks + KSTACK_PAGES * VMM_PAGE_SIZE;
+
+    /* [high] syscall frame copy (rax = 0) | ret=fork_return_stub | 6 regs [low] */
+    uint64_t *k = (uint64_t *)ktop;
+    k -= sizeof(struct syscall_frame) / 8;
+    memcpy(k, f, sizeof(struct syscall_frame));
+    ((struct syscall_frame *)k)->rax = 0;
+    *--k = (uint64_t)fork_return_stub;
+    for (int i = 0; i < 6; i++) *--k = 0;
+
+    struct task *t = &tasks[slot];
+    memset(t, 0, sizeof(*t));
+    t->pid = next_pid++;
+    t->ppid = parent->pid;
+    t->space = sp;
+    t->kstack = ks;
+    t->kstack_top = ktop;
+    t->rsp = (uint64_t)k;
+    t->brk_start = parent->brk_start;
+    t->brk = parent->brk;
+    strcpy(t->cwd, parent->cwd);
+    memcpy(t->name, parent->name, sizeof(t->name));
+    for (int i = 0; i < MAX_FDS; i++) {
+        if (parent->fds[i].kind != FD_NONE) fd_dup_into(&t->fds[i], &parent->fds[i]);
+    }
+
+    t->state = T_READY;
+    return t->pid;
+}
+
+int task_exec(struct syscall_frame *f, const char *path, const char *const *argv, int argc) {
+    char abs[PATH_BUF];
+    task_resolve_path(path, abs, sizeof(abs));
+
+    vmm_space_t *sp;
+    uint64_t entry, brk, user_rsp;
+    int r = build_image(abs, argv, argc, &sp, &entry, &brk, &user_rsp);
+    if (r != 0) return r;
+
+    struct task *t = current_task;
+    vmm_space_t *old = t->space;
+    t->space = sp;
+    vmm_space_switch(sp);
+    vmm_space_destroy(old);
+
+    t->brk_start = t->brk = brk;
+    set_name(t, abs);
+
+    /* Enter the new program when the syscall returns; no register survives */
+    memset(f, 0, sizeof(*f));
+    f->rip = entry;
+    f->rflags = 0x202;
+    f->user_rsp = user_rsp;
+    return 0;
 }

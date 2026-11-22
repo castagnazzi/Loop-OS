@@ -30,6 +30,12 @@ long lseek(int fd, long offset, int whence);
 void yield(void);
 pid_t getpid(void);
 __attribute__((noreturn)) void exit(int code);
+int pipe(int fds[2]);
+int dup2(int oldfd, int newfd);
+pid_t fork(void);
+int execve(const char *path, char *const argv[]);
+int mkdir(const char *path);
+int unlink(const char *path);                              /* files and empty directories */
 int spawn(const char *path, char *const argv[]);          /* returns the new pid */
 pid_t waitpid(pid_t pid, int *status, int options);       /* 0 if WNOHANG and still running */
 int kill(pid_t pid, int sig);

@@ -13,6 +13,7 @@
 /* Framebuffer state */
 static uint8_t *fb_base = NULL;
 static uint32_t fb_w = 0, fb_h = 0, fb_pitch = 0;
+static uint32_t fb_bypp = 4;     /* bytes per pixel: 4 (32 bpp) or 3 (24 bpp) */
 static uint8_t r_size, r_shift, g_size, g_shift, b_size, b_shift;
 
 int fb_init(struct limine_framebuffer *fb) {
@@ -49,8 +50,20 @@ uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b) {
 
 /* ------------------------------------------------------------------ */
 /* Primitives */
-static inline uint32_t *row_ptr(int y) {
-    return (uint32_t *)(fb_base + (uint64_t)y * fb_pitch);
+static inline uint8_t *row_ptr(int y) {
+    return fb_base + (uint64_t)y * fb_pitch;
+}
+
+static inline uint32_t px_get(int x, int y) {
+    uint8_t *p = row_ptr(y) + (uint64_t)x * fb_bypp;
+    if (fb_bypp == 4) return *(uint32_t *)p;
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
+}
+
+static inline void px_set(int x, int y, uint32_t c) {
+    uint8_t *p = row_ptr(y) + (uint64_t)x * fb_bypp;
+    if (fb_bypp == 4) { *(uint32_t *)p = c; return; }
+    p[0] = (uint8_t)c; p[1] = (uint8_t)(c >> 8); p[2] = (uint8_t)(c >> 16);
 }
 
 /* ------------------------------------------------------------------ */
@@ -92,10 +105,10 @@ static void cursor_draw(void) {
         for (int i = 0; i < CUR_W; i++) {
             int px = cursor_x + i, py = cursor_y + j;
             if (px < 0 || py < 0 || px >= (int)fb_w || py >= (int)fb_h) continue;
-            cursor_under[j * CUR_W + i] = row_ptr(py)[px];
+            cursor_under[j * CUR_W + i] = px_get(px, py);
             char c = cursor_shape[j][i];
-            if (c == 'X') row_ptr(py)[px] = black;
-            else if (c == '.') row_ptr(py)[px] = white;
+            if (c == 'X') px_set(px, py, black);
+            else if (c == '.') px_set(px, py, white);
         }
     }
     cursor_visible = 1;
@@ -107,7 +120,7 @@ static void cursor_erase(void) {
         for (int i = 0; i < CUR_W; i++) {
             int px = cursor_x + i, py = cursor_y + j;
             if (px < 0 || py < 0 || px >= (int)fb_w || py >= (int)fb_h) continue;
-            if (cursor_shape[j][i] != ' ') row_ptr(py)[px] = cursor_under[j * CUR_W + i];
+            if (cursor_shape[j][i] != ' ') px_set(px, py, cursor_under[j * CUR_W + i]);
         }
     }
     cursor_visible = 0;
@@ -158,7 +171,7 @@ void fb_putpixel(int x, int y, uint32_t color) {
     uint64_t f = interrupts_save();
     int redraw = cursor_overlaps(x, y, 1, 1);
     if (redraw) cursor_erase();
-    row_ptr(y)[x] = color;
+    px_set(x, y, color);
     if (redraw) cursor_draw();
     interrupts_restore(f);
 }
@@ -175,8 +188,41 @@ void fb_fill_rect(int x, int y, int w, int h, uint32_t color) {
     int redraw = cursor_overlaps(x, y, w, h);
     if (redraw) cursor_erase();
     for (int j = 0; j < h; j++) {
-        uint32_t *p = row_ptr(y + j) + x;
-        for (int i = 0; i < w; i++) p[i] = color;
+        if (fb_bypp == 4) {
+            uint32_t *p = (uint32_t *)row_ptr(y + j) + x;
+            for (int i = 0; i < w; i++) p[i] = color;
+        } else {
+            for (int i = 0; i < w; i++) px_set(x + i, y + j, color);
+        }
+    }
+    if (redraw) cursor_draw();
+    interrupts_restore(f);
+}
+
+/* Copy a w x h block of pixels (already in framebuffer format, 'stride'
+ * pixels per source row) to (x, y). */
+void fb_blit(int x, int y, int w, int h, const uint32_t *src, int stride) {
+    if (!fb_base || w <= 0 || h <= 0) return;
+    int sx = 0, sy = 0;
+    if (x < 0) { sx = -x; w += x; x = 0; }
+    if (y < 0) { sy = -y; h += y; y = 0; }
+    if (x + w > (int)fb_w) w = (int)fb_w - x;
+    if (y + h > (int)fb_h) h = (int)fb_h - y;
+    if (w <= 0 || h <= 0) return;
+
+    uint64_t f = interrupts_save();
+    int redraw = cursor_overlaps(x, y, w, h);
+    if (redraw) cursor_erase();
+    for (int j = 0; j < h; j++) {
+        const uint32_t *s = src + (size_t)(sy + j) * stride + sx;
+        if (fb_bypp == 4) {
+            memcpy((uint32_t *)row_ptr(y + j) + x, s, (size_t)w * 4);
+        } else {
+            uint8_t *d = row_ptr(y + j) + (uint64_t)x * 3;
+            for (int i = 0; i < w; i++, d += 3) {
+                d[0] = (uint8_t)s[i]; d[1] = (uint8_t)(s[i] >> 8); d[2] = (uint8_t)(s[i] >> 16);
+            }
+        }
     }
     if (redraw) cursor_draw();
     interrupts_restore(f);
@@ -314,9 +360,9 @@ static void con_scroll(void) {
     int redraw = cursor_overlaps(con_x, con_y, width_px, con_rows * con_line);
     if (redraw) cursor_erase();
     for (int j = 0; j < move_rows; j++) {
-        uint32_t *dst = row_ptr(con_y + j) + con_x;
-        uint32_t *src = row_ptr(con_y + j + con_line) + con_x;
-        memmove(dst, src, (size_t)width_px * sizeof(uint32_t));
+        uint8_t *dst = row_ptr(con_y + j) + (uint64_t)con_x * fb_bypp;
+        uint8_t *src = row_ptr(con_y + j + con_line) + (uint64_t)con_x * fb_bypp;
+        memmove(dst, src, (size_t)width_px * fb_bypp);
     }
     if (redraw) cursor_draw();
     interrupts_restore(f);

@@ -62,6 +62,32 @@ syscall_entry:
     sysretq
 .size syscall_entry, . - syscall_entry
 
+/* First code run by a forked child: RSP points at a copy of the parent's
+ * syscall frame (with RAX = 0); return to user mode exactly like the tail
+ * of syscall_entry. */
+.global fork_return_stub
+.type fork_return_stub, @function
+.align 16
+fork_return_stub:
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbp
+    popq %rbx
+    popq %r9
+    popq %r8
+    popq %r10
+    popq %rdx
+    popq %rsi
+    popq %rdi
+    popq %rax
+    popq %rcx
+    popq %r11
+    popq %rsp
+    sysretq
+.size fork_return_stub, . - fork_return_stub
+
 /* void switch_to(uint64_t *old_rsp_save, uint64_t new_rsp)
  *
  * Saves the callee-saved registers on the current kernel stack, stores RSP

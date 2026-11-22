@@ -242,6 +242,49 @@ static void free_tree(uint64_t table_phys, int level) {
     pmm_free((void *)table_phys, 1);
 }
 
+/* Deep copy of a table level: new tables, new frames, same contents */
+static int clone_level(uint64_t src_phys, uint64_t *out_phys, int level) {
+    void *np = pmm_alloc(1);
+    if (!np) return -1;
+    pte_t *d = phys_to_virt((uint64_t)np);
+    pte_t *s = phys_to_virt(src_phys);
+    memset(d, 0, VMM_PAGE_SIZE);
+    for (int i = 0; i < PT_ENTRIES; i++) {
+        pte_t e = s[i];
+        if (!(e & PTE_PRESENT)) continue;
+        uint64_t flags = e & ~PTE_ADDR_MASK;
+        uint64_t child;
+        if (level == 0) {
+            void *f = pmm_alloc(1);
+            if (!f) { free_tree((uint64_t)np, level); return -1; }
+            memcpy(phys_to_virt((uint64_t)f), phys_to_virt(e & PTE_ADDR_MASK), VMM_PAGE_SIZE);
+            child = (uint64_t)f;
+        } else if (clone_level(e & PTE_ADDR_MASK, &child, level - 1) != 0) {
+            free_tree((uint64_t)np, level);
+            return -1;
+        }
+        d[i] = child | flags;
+    }
+    *out_phys = (uint64_t)np;
+    return 0;
+}
+
+vmm_space_t *vmm_space_clone(vmm_space_t *src) {
+    vmm_space_t *sp = vmm_space_create();
+    if (!sp) return NULL;
+    for (int i = 0; i < 256; i++) {
+        pte_t e = src->pml4[i];
+        if (!(e & PTE_PRESENT)) continue;
+        uint64_t child;
+        if (clone_level(e & PTE_ADDR_MASK, &child, 2) != 0) {
+            vmm_space_destroy(sp);
+            return NULL;
+        }
+        sp->pml4[i] = child | (e & ~PTE_ADDR_MASK);
+    }
+    return sp;
+}
+
 void vmm_space_destroy(vmm_space_t *sp) {
     if (!sp) return;
     /* Never run on the tables being freed */

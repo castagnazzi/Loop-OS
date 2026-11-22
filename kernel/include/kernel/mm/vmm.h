@@ -50,6 +50,7 @@ uint64_t vmm_get_hhdm(void);
 typedef struct vmm_space vmm_space_t;
 
 vmm_space_t *vmm_space_create(void);
+vmm_space_t *vmm_space_clone(vmm_space_t *sp);     /* deep copy (fork) */
 void vmm_space_destroy(vmm_space_t *sp);            /* frees all user pages */
 int vmm_space_map(vmm_space_t *sp, uint64_t virt, uint64_t phys, uint64_t flags);
 int vmm_space_alloc_page(vmm_space_t *sp, uint64_t virt, uint64_t flags);  /* zeroed frame */

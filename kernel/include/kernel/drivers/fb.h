@@ -11,7 +11,7 @@ struct limine_framebuffer;
 #define FB_TRANSPARENT ((uint32_t)0xFFFFFFFFu)
 
 /* Initialize from the Limine framebuffer. Returns 0 on success
- * (only 32 bits per pixel is supported). */
+ * (24 and 32 bits per pixel are supported). */
 int fb_init(struct limine_framebuffer *fb);
 int fb_ready(void);
 
@@ -25,6 +25,7 @@ uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b);
 void fb_putpixel(int x, int y, uint32_t color);
 void fb_fill_rect(int x, int y, int w, int h, uint32_t color);
 void fb_clear(uint32_t color);
+void fb_blit(int x, int y, int w, int h, const uint32_t *src, int stride);  /* src in fb_rgb format */
 void fb_draw_glyph(int x, int y, char c, uint32_t fg, uint32_t bg, int size_px);  /* any size >= 8 */
 void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg, int scale);      /* integer scale */
 void fb_draw_string(int x, int y, const char *s, uint32_t fg, uint32_t bg, int scale);

@@ -12,9 +12,15 @@
 
 #define SYS_READ        0    /* read(fd, buf, count) */
 #define SYS_WRITE       1    /* write(fd, buf, count) */
-#define SYS_OPEN        2    /* open(path, flags) - read-only */
+#define SYS_OPEN        2    /* open(path, flags) */
 #define SYS_CLOSE       3    /* close(fd) */
 #define SYS_LSEEK       8    /* lseek(fd, offset, whence) */
+#define SYS_PIPE        22   /* pipe(int fds[2]) */
+#define SYS_DUP2        33   /* dup2(oldfd, newfd) */
+#define SYS_FORK        57   /* fork() -> child pid, 0 in the child */
+#define SYS_EXECVE      59   /* execve(path, argv) */
+#define SYS_MKDIR       83   /* mkdir(path) */
+#define SYS_UNLINK      87   /* unlink(path): files and empty directories */
 #define SYS_YIELD       24   /* yield() */
 #define SYS_GETPID      39   /* getpid() */
 #define SYS_EXIT        60   /* exit(code) */
@@ -50,6 +56,8 @@
 #define O_WRONLY 1
 #define O_RDWR   2
 #define O_CREAT  0x40
+#define O_TRUNC  0x200
+#define O_APPEND 0x400
 
 struct sys_dirent {
     char name[64];

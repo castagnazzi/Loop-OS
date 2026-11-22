@@ -18,6 +18,7 @@
 #include <kernel/arch/x86_64/serial.h>
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/fs/initrd.h>
+#include <kernel/fs/vfs.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/drivers/keyboard.h>
 
@@ -102,6 +103,7 @@ static void init_initrd(void) {
     int n = initrd_init(mod->address, mod->size);
     kprintf("initrd: %s, %lu bytes, %d entries\n", mod->path,
             (unsigned long)mod->size, n);
+    vfs_init();
 }
 
 /* ---------------------------------------------------------------- */
@@ -212,8 +214,8 @@ void kernel_main_higher_half(void) {
     interrupts_enable();
 
     /* Userspace: run /sbin/init (which starts the shell) and wait for it */
-    struct initrd_node init_node;
-    if (initrd_ready() && initrd_lookup("/sbin/init", &init_node) == 0 && !init_node.is_dir) {
+    struct vnode *init_node = vfs_lookup("/sbin/init");
+    if (init_node && !init_node->is_dir) {
         const char *init_argv[] = { "/sbin/init" };
         int pid = task_spawn("/sbin/init", init_argv, 1);
         if (pid > 0) {

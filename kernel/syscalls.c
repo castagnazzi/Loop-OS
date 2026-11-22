@@ -6,7 +6,8 @@
 
 #include <kernel/syscall_nums.h>
 #include <kernel/task.h>
-#include <kernel/fs/initrd.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/arch/x86_64/syscall.h>
 #include <kernel/drivers/fb.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/timer.h>
@@ -14,15 +15,6 @@
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include <stdint.h>
-
-/* Matches the frame pushed by syscall_entry (lowest address first) */
-struct syscall_frame {
-    uint64_t r15, r14, r13, r12, rbp, rbx, r9, r8, r10, rdx, rsi, rdi;
-    uint64_t rax;
-    uint64_t rip;        /* RCX */
-    uint64_t rflags;     /* R11 */
-    uint64_t user_rsp;
-};
 
 #define MAX_IO_CHUNK 256
 #define MAX_ARGS 16
@@ -68,75 +60,99 @@ static long sys_read(int fdn, uint64_t buf, uint64_t count) {
     if (count > MAX_IO_CHUNK) count = MAX_IO_CHUNK;
 
     uint8_t tmp[MAX_IO_CHUNK];
-    size_t n = 0;
+    long n = 0;
 
     if (f->kind == FD_CONSOLE_IN) {
         while (!keyboard_has_key()) task_block(W_KEY, 0);
-        while (n < count && keyboard_has_key()) {
+        while ((uint64_t)n < count && keyboard_has_key()) {
             int c = keyboard_getchar();
             if (c < 0) break;
             tmp[n++] = (uint8_t)c;
         }
     } else if (f->kind == FD_FILE) {
-        size_t left = f->size - f->off;
-        n = count < left ? (size_t)count : left;
-        memcpy(tmp, f->data + f->off, n);
-        f->off += n;
+        n = vfs_read(f->vn, f->off, tmp, count);
+        if (n > 0) f->off += (size_t)n;
+    } else if (f->kind == FD_PIPE_R) {
+        n = pipe_read(f->pipe, tmp, count);
     } else {
         return -SYS_EBADF;
     }
 
-    if (n && copy_to_user(buf, tmp, n) != 0) return -SYS_EFAULT;
-    return (long)n;
+    if (n > 0 && copy_to_user(buf, tmp, (size_t)n) != 0) return -SYS_EFAULT;
+    return n;
 }
 
 static long sys_write(int fdn, uint64_t buf, uint64_t count) {
     struct fd *f = get_fd(fdn);
     if (!f) return -SYS_EBADF;
-    if (f->kind != FD_CONSOLE_OUT) return -SYS_EACCES;
+    if (f->kind != FD_CONSOLE_OUT && f->kind != FD_FILE && f->kind != FD_PIPE_W) return -SYS_EACCES;
+    if (f->kind == FD_FILE && !(f->flags & (O_WRONLY | O_RDWR))) return -SYS_EACCES;
+
+    if (f->kind == FD_FILE && (f->flags & O_APPEND)) f->off = f->vn->size;
 
     uint64_t done = 0;
     while (done < count) {
         uint8_t tmp[MAX_IO_CHUNK];
         size_t chunk = count - done < MAX_IO_CHUNK ? (size_t)(count - done) : MAX_IO_CHUNK;
         if (copy_from_user(tmp, buf + done, chunk) != 0) return done ? (long)done : -SYS_EFAULT;
-        for (size_t i = 0; i < chunk; i++) kputchar((char)tmp[i]);
+        if (f->kind == FD_CONSOLE_OUT) {
+            for (size_t i = 0; i < chunk; i++) kputchar((char)tmp[i]);
+        } else if (f->kind == FD_FILE) {
+            long w = vfs_write(f->vn, f->off, tmp, chunk);
+            if (w < 0) return done ? (long)done : w;
+            f->off += (size_t)w;
+        } else {
+            long w = pipe_write(f->pipe, tmp, chunk);
+            if (w < 0) return done ? (long)done : w;
+        }
         done += chunk;
     }
     return (long)done;
 }
 
+static struct fd *alloc_fd(int *idx) {
+    for (int i = 3; i < MAX_FDS; i++) {
+        if (current_task->fds[i].kind == FD_NONE) {
+            *idx = i;
+            return &current_task->fds[i];
+        }
+    }
+    return NULL;
+}
+
 static long sys_open(uint64_t upath, uint64_t flags) {
     char path[PATH_BUF], abs[PATH_BUF];
     if (copy_str_from_user(path, upath, sizeof(path)) != 0) return -SYS_EFAULT;
-    if (flags & (O_WRONLY | O_RDWR | O_CREAT)) return -SYS_EACCES;   /* read-only fs */
 
     task_resolve_path(path, abs, sizeof(abs));
-    struct initrd_node node;
-    if (initrd_lookup(abs, &node) != 0) return -SYS_ENOENT;
+    struct vnode *n = vfs_lookup(abs);
+    if (!n && (flags & O_CREAT)) n = vfs_create(abs, 0);
+    if (!n) return -SYS_ENOENT;
 
-    for (int i = 3; i < MAX_FDS; i++) {
-        struct fd *f = &current_task->fds[i];
-        if (f->kind != FD_NONE) continue;
-        memset(f, 0, sizeof(*f));
-        if (node.is_dir) {
-            f->kind = FD_DIR;
-            strncpy(f->path, abs, sizeof(f->path) - 1);
-        } else {
-            f->kind = FD_FILE;
-            f->data = node.data;
-            f->size = node.size;
-        }
-        return i;
+    int idx;
+    struct fd *f = alloc_fd(&idx);
+    if (!f) return -SYS_EMFILE;
+    memset(f, 0, sizeof(*f));
+    if (n->is_dir) {
+        if (flags & (O_WRONLY | O_RDWR)) return -SYS_EACCES;
+        f->kind = FD_DIR;
+        vfs_canonical(abs, f->path, sizeof(f->path));
+        f->vn = n;
+    } else {
+        f->kind = FD_FILE;
+        f->vn = n;
+        f->flags = (int)flags;
+        vfs_ref(n);
+        if (flags & O_TRUNC) vfs_truncate(n);
     }
-    return -SYS_EMFILE;
+    return idx;
 }
 
 static long sys_close(int fdn) {
-    if (fdn < 3) return 0;          /* the standard descriptors stay open */
-    struct fd *f = get_fd(fdn);
-    if (!f) return -SYS_EBADF;
-    f->kind = FD_NONE;
+    if (fdn < 0 || fdn >= MAX_FDS) return -SYS_EBADF;
+    struct fd *f = &current_task->fds[fdn];
+    if (f->kind == FD_NONE) return -SYS_EBADF;
+    fd_release(f);
     return 0;
 }
 
@@ -147,12 +163,12 @@ static long sys_lseek(int fdn, int64_t off, int whence) {
     switch (whence) {
     case 0: base = 0; break;
     case 1: base = (int64_t)f->off; break;
-    case 2: base = (int64_t)f->size; break;
+    case 2: base = (int64_t)f->vn->size; break;
     default: return -SYS_EINVAL;
     }
     int64_t pos = base + off;
     if (pos < 0) return -SYS_EINVAL;
-    f->off = (size_t)pos > f->size ? f->size : (size_t)pos;
+    f->off = (size_t)pos;
     return (long)f->off;
 }
 
@@ -160,11 +176,12 @@ static long sys_readdir(int fdn, uint64_t ubuf) {
     struct fd *f = get_fd(fdn);
     if (!f || f->kind != FD_DIR) return -SYS_EBADF;
 
+    struct vnode *e = vfs_entry_at(f->vn, f->off);
+    if (!e) return 0;
     struct sys_dirent d;
-    int is_dir = 0;
     memset(&d, 0, sizeof(d));
-    if (initrd_readdir(f->path, f->off, d.name, sizeof(d.name), &is_dir) != 0) return 0;
-    d.is_dir = (uint32_t)is_dir;
+    strncpy(d.name, e->name, sizeof(d.name) - 1);
+    d.is_dir = (uint32_t)e->is_dir;
     f->off++;
     if (copy_to_user(ubuf, &d, sizeof(d)) != 0) return -SYS_EFAULT;
     return 1;
@@ -182,12 +199,53 @@ static long sys_chdir(uint64_t upath) {
     if (copy_str_from_user(path, upath, sizeof(path)) != 0) return -SYS_EFAULT;
     task_resolve_path(path, abs, sizeof(abs));
 
-    struct initrd_node node;
-    if (initrd_lookup(abs, &node) != 0) return -SYS_ENOENT;
-    if (!node.is_dir) return -SYS_ENOENT;
+    struct vnode *n = vfs_lookup(abs);
+    if (!n || !n->is_dir) return -SYS_ENOENT;
 
-    initrd_canonical(abs, current_task->cwd, sizeof(current_task->cwd));
+    vfs_canonical(abs, current_task->cwd, sizeof(current_task->cwd));
     return 0;
+}
+
+static long sys_mkdir(uint64_t upath) {
+    char path[PATH_BUF], abs[PATH_BUF];
+    if (copy_str_from_user(path, upath, sizeof(path)) != 0) return -SYS_EFAULT;
+    task_resolve_path(path, abs, sizeof(abs));
+    return vfs_create(abs, 1) ? 0 : -SYS_EINVAL;
+}
+
+static long sys_unlink(uint64_t upath) {
+    char path[PATH_BUF], abs[PATH_BUF];
+    if (copy_str_from_user(path, upath, sizeof(path)) != 0) return -SYS_EFAULT;
+    task_resolve_path(path, abs, sizeof(abs));
+    return vfs_unlink(abs);
+}
+
+static long sys_pipe(uint64_t ufds) {
+    int ri, wi;
+    struct fd *r = alloc_fd(&ri);
+    if (!r) return -SYS_EMFILE;
+    r->kind = FD_PIPE_R;                 /* reserve the slot before the next search */
+    struct fd *w = alloc_fd(&wi);
+    if (!w) { r->kind = FD_NONE; return -SYS_EMFILE; }
+    if (pipe_create(r, w) != 0) { r->kind = FD_NONE; return -SYS_ENOMEM; }
+    int out[2] = { ri, wi };
+    if (copy_to_user(ufds, out, sizeof(out)) != 0) {
+        fd_release(r);
+        fd_release(w);
+        return -SYS_EFAULT;
+    }
+    return 0;
+}
+
+static long sys_dup2(int oldfd, int newfd) {
+    struct fd *src = get_fd(oldfd);
+    if (!src) return -SYS_EBADF;
+    if (newfd < 0 || newfd >= MAX_FDS) return -SYS_EBADF;
+    if (oldfd == newfd) return newfd;
+    struct fd *dst = &current_task->fds[newfd];
+    if (dst->kind != FD_NONE) fd_release(dst);
+    fd_dup_into(dst, src);
+    return newfd;
 }
 
 static long sys_sbrk(int64_t inc) {
@@ -211,30 +269,47 @@ static long sys_sbrk(int64_t inc) {
     return (long)old;
 }
 
-static long sys_spawn(uint64_t upath, uint64_t uargv) {
-    char path[PATH_BUF];
-    if (copy_str_from_user(path, upath, sizeof(path)) != 0) return -SYS_EFAULT;
+static char kargs[MAX_ARGS][ARG_LEN];     /* kernel is not reentrant here */
 
-    static char args[MAX_ARGS][ARG_LEN];     /* kernel is not reentrant here */
-    const char *argv[MAX_ARGS];
+/* Read a NULL-terminated argv from user memory into kargs */
+static long load_args(uint64_t upath, uint64_t uargv, char *path, const char **argv, int *argcp) {
+    if (copy_str_from_user(path, upath, PATH_BUF) != 0) return -SYS_EFAULT;
     int argc = 0;
-
     if (uargv) {
         for (; argc < MAX_ARGS - 1; argc++) {
             uint64_t ptr;
             if (copy_from_user(&ptr, uargv + (uint64_t)argc * 8, 8) != 0) return -SYS_EFAULT;
             if (ptr == 0) break;
-            if (copy_str_from_user(args[argc], ptr, ARG_LEN) != 0) return -SYS_EFAULT;
-            argv[argc] = args[argc];
+            if (copy_str_from_user(kargs[argc], ptr, ARG_LEN) != 0) return -SYS_EFAULT;
+            argv[argc] = kargs[argc];
         }
     }
     if (argc == 0) {
-        strncpy(args[0], path, ARG_LEN - 1);
-        args[0][ARG_LEN - 1] = '\0';
-        argv[0] = args[0];
+        strncpy(kargs[0], path, ARG_LEN - 1);
+        kargs[0][ARG_LEN - 1] = '\0';
+        argv[0] = kargs[0];
         argc = 1;
     }
+    *argcp = argc;
+    return 0;
+}
+
+static long sys_spawn(uint64_t upath, uint64_t uargv) {
+    char path[PATH_BUF];
+    const char *argv[MAX_ARGS];
+    int argc;
+    long r = load_args(upath, uargv, path, argv, &argc);
+    if (r < 0) return r;
     return task_spawn(path, argv, argc);
+}
+
+static long sys_execve(struct syscall_frame *f, uint64_t upath, uint64_t uargv) {
+    char path[PATH_BUF];
+    const char *argv[MAX_ARGS];
+    int argc;
+    long r = load_args(upath, uargv, path, argv, &argc);
+    if (r < 0) return r;
+    return task_exec(f, path, argv, argc);
 }
 
 static long sys_wait4(int pid, uint64_t ustatus, uint64_t options) {
@@ -286,6 +361,12 @@ void syscall_dispatch(struct syscall_frame *f) {
         break;
     case SYS_CLEAR:     fbcon_clear(); ret = 0; break;
     case SYS_TASKINFO:  ret = sys_taskinfo((int)a1, a2); break;
+    case SYS_PIPE:      ret = sys_pipe(a1); break;
+    case SYS_DUP2:      ret = sys_dup2((int)a1, (int)a2); break;
+    case SYS_FORK:      ret = task_fork(f); break;
+    case SYS_EXECVE:    ret = sys_execve(f, a1, a2); break;
+    case SYS_MKDIR:     ret = sys_mkdir(a1); break;
+    case SYS_UNLINK:    ret = sys_unlink(a1); break;
     default:            ret = -SYS_ENOSYS; break;
     }
     f->rax = (uint64_t)ret;

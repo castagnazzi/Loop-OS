@@ -29,14 +29,24 @@ enum task_state { T_UNUSED = 0, T_READY, T_RUNNING, T_BLOCKED, T_ZOMBIE };
 enum wait_kind { W_NONE = 0, W_KEY, W_CHILD, W_SLEEP };
 
 /* Open file descriptor */
-enum fd_kind { FD_NONE = 0, FD_CONSOLE_IN, FD_CONSOLE_OUT, FD_FILE, FD_DIR };
+enum fd_kind { FD_NONE = 0, FD_CONSOLE_IN, FD_CONSOLE_OUT, FD_FILE, FD_DIR, FD_PIPE_R, FD_PIPE_W };
+struct vnode;
+struct pipe;
 struct fd {
     enum fd_kind kind;
-    const uint8_t *data;       /* FD_FILE: contents in the initrd */
-    size_t size;
-    size_t off;                /* FD_FILE: read offset */
+    struct vnode *vn;          /* FD_FILE */
+    struct pipe *pipe;         /* FD_PIPE_R / FD_PIPE_W */
+    size_t off;                /* FD_FILE: position; FD_DIR: entry index */
+    int flags;                 /* O_* flags the file was opened with */
     char path[PATH_BUF];       /* FD_DIR: directory path */
 };
+
+/* Descriptor helpers (kernel/fs/fd.c) */
+void fd_dup_into(struct fd *dst, const struct fd *src);   /* shares the file/pipe */
+void fd_release(struct fd *f);                            /* close */
+int pipe_create(struct fd *rd, struct fd *wr);            /* 0 or -1 */
+long pipe_read(struct pipe *p, void *buf, size_t n);      /* blocks; 0 = EOF */
+long pipe_write(struct pipe *p, const void *buf, size_t n);  /* -32 (EPIPE) w/o readers */
 
 struct task {
     int pid;
@@ -74,6 +84,14 @@ void task_init(void);
 /* Load an executable from the initrd and create a ready-to-run task.
  * Returns the new pid, or a negative errno. */
 int task_spawn(const char *path, const char *const *argv, int argc);
+
+struct syscall_frame;
+/* fork(): clone the current task (address space and descriptors). Returns
+ * the child's pid in the parent; the child resumes with 0. */
+int task_fork(const struct syscall_frame *f);
+/* execve(): replace the current image; on success the syscall frame is
+ * rewritten to enter the new program. Returns 0 or a negative errno. */
+int task_exec(struct syscall_frame *f, const char *path, const char *const *argv, int argc);
 
 /* Wait for a child (pid = -1 for any; nohang returns 0 if none has exited
  * yet instead of blocking). Returns its pid and stores the exit

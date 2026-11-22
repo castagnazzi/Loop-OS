@@ -3,9 +3,11 @@
 #include <ulib.h>
 
 int main(int argc, char **argv) {
-    if (argc < 2) {
-        puts("usage: cat <file>...");
-        return 1;
+    if (argc < 2) {                       /* no files: copy stdin (pipes) */
+        char buf[256];
+        ssize_t n;
+        while ((n = read(STDIN_FILENO, buf, sizeof(buf))) > 0) write(STDOUT_FILENO, buf, (size_t)n);
+        return 0;
     }
 
     int status = 0;
