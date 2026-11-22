@@ -190,11 +190,14 @@ static void test_heap(void) {
 
     /* Large allocation forces the heap to grow */
     heap_get_stats(&s0);
-    uint8_t *big = kmalloc(512 * 1024);
-    CHECK(big != NULL, "512 KiB allocation succeeds (heap grows)");
+    /* Ask for more than the free space so the heap must grow, whatever its
+     * current size (this test can be re-run from the shell) */
+    size_t big_size = s0.free + 64 * 1024;
+    uint8_t *big = kmalloc(big_size);
+    CHECK(big != NULL, "allocation larger than the free space succeeds (heap grows)");
     if (big) {
-        memset(big, 0xCD, 512 * 1024);
-        CHECK(fill_ok(big, 512 * 1024, 0xCD), "large block fully usable");
+        memset(big, 0xCD, big_size);
+        CHECK(fill_ok(big, big_size, 0xCD), "large block fully usable");
         heap_get_stats(&s1);
         CHECK(s1.total > s0.total, "heap total grew");
         kfree(big);

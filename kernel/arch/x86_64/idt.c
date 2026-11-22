@@ -159,9 +159,6 @@ static inline void io_wait(void) {
 }
 
 void pic_remap(uint8_t offset1, uint8_t offset2) {
-    uint8_t mask1 = serial_inb(PIC1_DATA);
-    uint8_t mask2 = serial_inb(PIC2_DATA);
-    
     /* ICW1: initialize */
     serial_outb(PIC1_CMD, 0x11);
     io_wait();
@@ -186,11 +183,23 @@ void pic_remap(uint8_t offset1, uint8_t offset2) {
     serial_outb(PIC2_DATA, 0x01);
     io_wait();
     
-    /* Restore masks */
-    serial_outb(PIC1_DATA, mask1);
-    serial_outb(PIC2_DATA, mask2);
-    
+    /* Mask every IRQ: drivers unmask theirs with pic_unmask() once their
+     * handler is registered. (The masks left by the firmware are unknown.) */
+    serial_outb(PIC1_DATA, 0xFF);
+    serial_outb(PIC2_DATA, 0xFF);
+
     kprintf("PIC: remapped to 0x%02x-0x%02x\n", offset1, offset2 + 7);
+}
+
+void pic_unmask(uint8_t irq) {
+    if (irq >= 16) return;
+    if (irq >= 8) {
+        /* The slave PIC hangs off IRQ2 of the master */
+        serial_outb(PIC1_DATA, serial_inb(PIC1_DATA) & ~(1 << 2));
+        serial_outb(PIC2_DATA, serial_inb(PIC2_DATA) & ~(1 << (irq - 8)));
+    } else {
+        serial_outb(PIC1_DATA, serial_inb(PIC1_DATA) & ~(1 << irq));
+    }
 }
 
 void pic_send_eoi(uint8_t irq) {

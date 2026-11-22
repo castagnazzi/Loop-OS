@@ -36,5 +36,6 @@ int fb_draw_boot_screen(void);
  * 'scale'. Handles \n \r \t \b, wraps lines and scrolls. */
 void fbcon_init(int x, int y, int w, int h, int scale, uint32_t fg, uint32_t bg);
 void fbcon_putc(char c);
+void fbcon_clear(void);
 
 #endif

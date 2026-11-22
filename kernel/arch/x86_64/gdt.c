@@ -62,12 +62,17 @@ void gdt_init(void) {
     
     /* TSS (uses entries 5 and 6) */
     memset(&tss, 0, sizeof(tss));
+    tss.iomap_base = sizeof(tss);   /* no I/O permission bitmap */
     gdt_set_tss(5, &tss);
-    
+
     /* GDT pointer */
     gdt_ptr.limit = sizeof(gdt) - 1;
     gdt_ptr.base = (uint64_t)&gdt;
-    
+
+    /* Switch the CPU to our GDT (the IDT gates use selector 0x08, which is
+     * only valid in this table, not in the one Limine left us) */
+    gdt_load();
+
     kprintf("GDT: initialized with %zu entries\n", sizeof(gdt) / sizeof(gdt[0]));
 }
 

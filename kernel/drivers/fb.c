@@ -151,6 +151,12 @@ void fbcon_init(int x, int y, int w, int h, int scale, uint32_t fg, uint32_t bg)
     con_ready = 1;
 }
 
+void fbcon_clear(void) {
+    if (!con_ready) return;
+    fb_fill_rect(con_x, con_y, con_w, con_h, con_bg);
+    con_cx = con_cy = 0;
+}
+
 static void con_scroll(void) {
     int cell = 8 * con_scale;
     int move_rows = (con_rows - 1) * cell;

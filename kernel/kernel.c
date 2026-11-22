@@ -8,6 +8,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/heap.h>
 #include <kernel/drivers/fb.h>
+#include <kernel/kshell.h>
 #include <kernel/mm/mm_test.h>
 #include <kernel/arch/x86_64/gdt.h>
 #include <kernel/arch/x86_64/idt.h>
@@ -165,7 +166,7 @@ void kernel_main_higher_half(void) {
     cpu_detect();
 
     /* Timer (PIT) */
-    timer_init(1000);  /* 1000 Hz */
+    timer_init(100);  /* 100 Hz (kshell assumes this tick rate) */
 
     /* Keyboard */
     keyboard_init();
@@ -175,8 +176,9 @@ void kernel_main_higher_half(void) {
     kprintf("\nKernel initialization complete!\n");
     kprintf("Dropping to shell...\n");
 
-    /* Idle loop */
-    for (;;) {
-        asm volatile("hlt");
-    }
+    /* Interrupts on: timer ticks and keyboard input start flowing */
+    interrupts_enable();
+
+    /* Temporary in-kernel shell until userspace exists */
+    kshell_run();
 }

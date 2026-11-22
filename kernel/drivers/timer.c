@@ -43,6 +43,8 @@ static inline uint8_t inb(uint16_t port) {
     return ret;
 }
 
+void timer_handler(void *frame);
+
 /* Initialize PIT */
 void timer_init(uint32_t frequency) {
     if (frequency < 18 || frequency > 1000000) {
@@ -65,6 +67,10 @@ void timer_init(uint32_t frequency) {
     memset(timer_callbacks, 0, sizeof(timer_callbacks));
     next_callback_id = 1;
     
+    /* Route IRQ0 to the tick handler and enable it on the PIC */
+    irq_register_handler(0, (irq_handler_t)timer_handler);
+    pic_unmask(0);
+
     kprintf("Timer: initialized at %u Hz (divisor=%u)\n", frequency, divisor);
 }
 
@@ -80,9 +86,8 @@ void timer_handler(void *frame) {
             timer_callbacks[i].next_tick += timer_frequency / timer_callbacks[i].hz;
         }
     }
-    
-    /* EOI */
-    pic_send_eoi(0);
+
+    /* EOI is sent by irq_common_handler */
 }
 
 uint64_t timer_ticks(void) {

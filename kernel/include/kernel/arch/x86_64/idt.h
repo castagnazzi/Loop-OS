@@ -71,6 +71,9 @@ static inline void interrupts_disable(void) { asm volatile("cli"); }
 /* Send EOI to PIC */
 void pic_send_eoi(uint8_t irq);
 
+/* Unmask (enable) one IRQ line on the PIC. All lines start masked. */
+void pic_unmask(uint8_t irq);
+
 /* Remap PIC */
 void pic_remap(uint8_t offset1, uint8_t offset2);
 

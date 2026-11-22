@@ -191,6 +191,10 @@ void keyboard_init(void) {
     kbd_head = kbd_tail = 0;
     memset(&kbd_state, 0, sizeof(kbd_state));
     
+    /* Route IRQ1 to the keyboard handler and enable it on the PIC */
+    irq_register_handler(1, (irq_handler_t)keyboard_handler);
+    pic_unmask(1);
+
     kprintf("Keyboard: initialized\n");
 }
 
@@ -273,7 +277,7 @@ void keyboard_handler(void *frame) {
     (void)frame;
     uint8_t scancode = inb(KBD_DATA_PORT);
     process_scancode(scancode);
-    pic_send_eoi(1);
+    /* EOI is sent by irq_common_handler */
 }
 
 /* Get character from buffer (non-blocking) */
