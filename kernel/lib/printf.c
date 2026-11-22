@@ -22,9 +22,25 @@ struct printf_state {
     int count;
 };
 
+/* Everything printed through kprintf is kept in a small log buffer so a
+ * display sink (framebuffer console) registered later can replay it. */
+#define KLOG_SIZE 16384
+static char klog_buf[KLOG_SIZE];
+static size_t klog_len = 0;
+static void (*klog_sink)(char) = NULL;
+
+void kprintf_set_sink(void (*sink)(char)) {
+    klog_sink = sink;
+    if (sink) {
+        for (size_t i = 0; i < klog_len; i++) sink(klog_buf[i]);
+    }
+}
+
 static int printf_putc_serial(int c, void *data) {
     (void)data;
     serial_write_char(c);
+    if (klog_len < KLOG_SIZE) klog_buf[klog_len++] = (char)c;
+    if (klog_sink) klog_sink((char)c);
     return c;
 }
 

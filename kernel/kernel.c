@@ -7,6 +7,7 @@
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/heap.h>
+#include <kernel/drivers/fb.h>
 #include <kernel/mm/mm_test.h>
 #include <kernel/arch/x86_64/gdt.h>
 #include <kernel/arch/x86_64/idt.h>
@@ -96,7 +97,20 @@ static void init_framebuffer(void) {
     kprintf("Framebuffer: %dx%d @ 0x%lx, pitch=%d, bpp=%d\n",
             fb->width, fb->height, fb->address, fb->pitch, fb->bpp);
 
-    /* TODO: Map framebuffer in higher-half, init console */
+    /* The framebuffer is already reachable through the HHDM */
+    if (fb_init(fb) != 0) {
+        kprintf("Warning: framebuffer driver could not start\n");
+        return;
+    }
+
+    /* Boot screen + a text console below the title bar that mirrors the log */
+    int top = fb_draw_boot_screen();
+    int margin = 16;
+    int cw = (int)fb_width() - 2 * margin;
+    int ch = (int)fb_height() - top - 2 * margin;
+    fb_fill_rect(margin - 4, top + margin - 4, cw + 8, ch + 8, fb_rgb(6, 10, 22));
+    fbcon_init(margin, top + margin, cw, ch, 2, fb_rgb(205, 214, 232), fb_rgb(6, 10, 22));
+    kprintf_set_sink(fbcon_putc);   /* replays everything logged so far */
 }
 
 /* ---------------------------------------------------------------- */
