@@ -32,8 +32,6 @@ extern volatile struct limine_rsdp_request limine_rsdp_request;
 extern volatile struct limine_smp_request limine_smp_request;
 extern volatile struct limine_hhdm_request limine_hhdm_request;
 
-/* Kernel command line (from Limine) */
-static char kernel_cmdline[256] = {0};
 
 /* Early framebuffer info */
 struct limine_framebuffer *early_fb = NULL;

@@ -59,7 +59,7 @@ static int printf_putc_buf(int c, void *data) {
     return c;
 }
 
-static void printf_number(struct printf_state *st, uint64_t val, int base, int width, int pad_zero, int upper) {
+static void printf_number(struct printf_state *st, uint64_t val, int base, int width, int pad_zero, int upper, int negative) {
     char buf[32];
     int i = 0;
     const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
@@ -73,21 +73,19 @@ static void printf_number(struct printf_state *st, uint64_t val, int base, int w
         }
     }
     
-    while (i < width) {
-        st->putc(pad_zero ? '0' : ' ', st->data);
-        width--;
-    }
-    
+    /* Space padding goes before the sign, zero padding between sign and digits */
+    int pad = width - i - (negative ? 1 : 0);
+    if (!pad_zero) while (pad-- > 0) st->putc(' ', st->data);
+    if (negative) st->putc('-', st->data);
+    if (pad_zero) while (pad-- > 0) st->putc('0', st->data);
+
     while (i--) st->putc(buf[i], st->data);
 }
 
 static void printf_signed(struct printf_state *st, int64_t val, int width, int pad_zero) {
-    if (val < 0) {
-        st->putc('-', st->data);
-        val = -val;
-        width--;
-    }
-    printf_number(st, val, 10, width, pad_zero, 0);
+    int negative = val < 0;
+    uint64_t magnitude = negative ? -(uint64_t)val : (uint64_t)val;
+    printf_number(st, magnitude, 10, width, pad_zero, 0, negative);
 }
 
 static int kvprintf_core(const char *fmt, va_list ap, struct printf_state *st) {
@@ -170,7 +168,7 @@ static int kvprintf_core(const char *fmt, va_list ap, struct printf_state *st) {
                 else if (size_t_len) val = va_arg(ap, size_t);
                 else if (ptrdiff) val = va_arg(ap, uintptr_t);
                 else val = va_arg(ap, unsigned int);
-                printf_number(st, val, 10, width, pad_zero, 0);
+                printf_number(st, val, 10, width, pad_zero, 0, 0);
                 break;
             }
             case 'x': case 'X': {
@@ -182,14 +180,14 @@ static int kvprintf_core(const char *fmt, va_list ap, struct printf_state *st) {
                 else if (size_t_len) val = va_arg(ap, size_t);
                 else if (ptrdiff) val = va_arg(ap, uintptr_t);
                 else val = va_arg(ap, unsigned int);
-                printf_number(st, val, 16, width, pad_zero, *fmt == 'X');
+                printf_number(st, val, 16, width, pad_zero, *fmt == 0x58, 0);
                 break;
             }
             case 'p': {
                 uintptr_t val = va_arg(ap, uintptr_t);
                 st->putc('0', st->data);
                 st->putc('x', st->data);
-                printf_number(st, val, 16, 2 * sizeof(uintptr_t), 1, 0);
+                printf_number(st, val, 16, 2 * sizeof(uintptr_t), 1, 0, 0);
                 break;
             }
             case 's': {

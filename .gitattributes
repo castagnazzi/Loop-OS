@@ -1,0 +1,22 @@
+# Sources and scripts must keep LF line endings: they are built and run
+# inside WSL/Linux, where a CRLF breaks shell scripts and Makefiles.
+* text=auto
+*.sh        text eol=lf
+*.S         text eol=lf
+*.c         text eol=lf
+*.h         text eol=lf
+*.ld        text eol=lf
+*.py        text eol=lf
+Makefile    text eol=lf
+*.mk        text eol=lf
+rootfs/**   text eol=lf
+
+# Windows-only scripts keep CRLF
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+
+# Binaries
+*.exe       binary
+*.dll       binary
+*.bin       binary
+*.png       binary

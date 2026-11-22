@@ -21,10 +21,21 @@
 struct block {
     size_t size;            /* payload size in bytes (multiple of HEAP_ALIGN) */
     uint32_t magic;
-    uint32_t pad;
+    uint32_t region;        /* id of the heap region this block lives in */
     struct block *next;     /* next block by address */
     uint64_t pad2;          /* keep the header at 32 bytes (payload 16-aligned) */
 };
+
+/* The heap grows in regions (one vmm_alloc each). Blocks never straddle two
+ * regions, so a region whose single block is free can be handed back. */
+#define MAX_REGIONS 64
+#define REGION_UNTRACKED 0xFFFFFFFFu
+struct region {
+    void *start;
+    size_t pages;
+    int used;
+};
+static struct region regions[MAX_REGIONS];
 
 #define HDR sizeof(struct block)
 
@@ -45,9 +56,10 @@ static inline struct block *header(void *p) {
     return (struct block *)((uint8_t *)p - HDR);
 }
 
-/* True if b and b->next are contiguous in memory */
+/* True if b and b->next are contiguous in memory and in the same region */
 static inline int adjacent(struct block *b) {
-    return b->next && (uint8_t *)b + HDR + b->size == (uint8_t *)b->next;
+    return b->next && b->region == b->next->region &&
+           (uint8_t *)b + HDR + b->size == (uint8_t *)b->next;
 }
 
 /* Map more memory and append it to the list. Returns 0 on success. */
@@ -58,9 +70,22 @@ static int heap_grow(size_t min_payload) {
     void *mem = vmm_alloc(pages, VMM_KERNEL_FLAGS | VMM_FLAG_NX);
     if (!mem) return -1;
 
+    /* Record the region so it can be released when it becomes entirely free */
+    uint32_t id = REGION_UNTRACKED;
+    for (uint32_t i = 0; i < MAX_REGIONS; i++) {
+        if (!regions[i].used) {
+            regions[i].used = 1;
+            regions[i].start = mem;
+            regions[i].pages = pages;
+            id = i;
+            break;
+        }
+    }
+
     struct block *nb = mem;
     nb->size = pages * VMM_PAGE_SIZE - HDR;
     nb->magic = HEAP_MAGIC_FREE;
+    nb->region = id;
     nb->next = NULL;
 
     if (!heap_head) {
@@ -72,14 +97,32 @@ static int heap_grow(size_t min_payload) {
     struct block *tail = heap_head;
     while (tail->next) tail = tail->next;
     tail->next = nb;
-
-    /* Merge with a free, adjacent tail */
-    if (tail->magic == HEAP_MAGIC_FREE && adjacent(tail)) {
-        tail->size += HDR + nb->size;
-        tail->next = nb->next;
-        nb->magic = 0;
-    }
     return 0;
+}
+
+/* If 'b' is the one free block covering a whole region (other than the
+ * first one), unlink it and give the pages back to the VMM/PMM. */
+static void heap_release_region(struct block *b) {
+    if (b->region == REGION_UNTRACKED || b->region == 0) return;
+    struct region *r = &regions[b->region];
+    if (!r->used || (void *)b != r->start) return;
+    if (b->size + HDR != r->pages * VMM_PAGE_SIZE) return;
+
+    /* Unlink from the address-ordered list */
+    if (heap_head == b) {
+        heap_head = b->next;
+    } else {
+        struct block *p = heap_head;
+        while (p && p->next != b) p = p->next;
+        if (!p) return;
+        p->next = b->next;
+    }
+
+    void *start = r->start;
+    size_t pages = r->pages;
+    r->used = 0;
+    b->magic = 0;
+    vmm_free(start, pages);
 }
 
 void heap_init(void) {
@@ -109,6 +152,7 @@ void *kmalloc(size_t size) {
                 struct block *rest = (struct block *)((uint8_t *)b + HDR + size);
                 rest->size = b->size - size - HDR;
                 rest->magic = HEAP_MAGIC_FREE;
+                rest->region = b->region;
                 rest->next = b->next;
                 b->next = rest;
                 b->size = size;
@@ -148,7 +192,11 @@ void kfree(void *ptr) {
         prev->size += HDR + b->size;
         prev->next = b->next;
         b->magic = 0;
+        b = prev;
     }
+
+    /* A whole region that is free again goes back to the system */
+    heap_release_region(b);
 }
 
 void *kcalloc(size_t nmemb, size_t size) {

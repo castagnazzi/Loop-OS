@@ -130,6 +130,33 @@ loop-os/
 
 ---
 
+## Estado atual
+
+| Fase | Situação |
+|------|----------|
+| 0 - Toolchain e build | Pronta: `make toolchain`, `make`, `make iso`, `make run` |
+| 1 - Kernel core | Pronta: GDT/IDT, PIC, PMM, VMM, heap (`kmalloc`/`kfree`), timer, teclado, mouse, framebuffer + console. 69 testes de memória rodam no boot |
+| 2 - Drivers e FS | Parcial: initrd somente leitura (tar). Faltam PCI, VFS completo, FAT32, ext2 |
+| 3 - Userspace básico | Funcionando em ring 3: SYSCALL/SYSRET, processos, ELF, scheduler preemptivo, `init` e `sh`. Sem `fork`/`execve` (há `spawn`), sem FS gravável |
+| 4 a 7 | Não iniciadas |
+
+### Como rodar
+
+```bash
+make toolchain      # uma vez (cross-compiler x86_64-elf)
+export PATH="$PWD/toolchain/local/bin:$PATH"
+make iso            # kernel + userspace + initrd + ISO
+qemu-system-x86_64 -cdrom build/loop-os.iso -m 256 -serial stdio
+```
+
+O kernel inicia `/sbin/init`, que inicia `/bin/sh`. Programas em `/bin`:
+`ls cat hello ps kill sleep spin crash`. Quando o `init` termina, o kernel cai no
+seu shell interno (`help` lista os comandos).
+
+O código do userspace está em `userspace/` (ulib + programas). O scaffold antigo,
+que nunca compilou, ficou em `userspace/legacy/`. Os arquivos de `rootfs/` entram
+no initrd. Sobre sistemas de arquivos: o initrd é somente leitura.
+
 ## 🚀 Fases de Desenvolvimento
 
 ### **Fase 0 — Toolchain & Build System** ✅ *Iniciar aqui*

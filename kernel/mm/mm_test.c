@@ -200,7 +200,13 @@ static void test_heap(void) {
         CHECK(fill_ok(big, big_size, 0xCD), "large block fully usable");
         heap_get_stats(&s1);
         CHECK(s1.total > s0.total, "heap total grew");
+
+        size_t pmm_before = pmm_free_pages();
         kfree(big);
+        struct heap_stats s2;
+        heap_get_stats(&s2);
+        CHECK(s2.total <= s0.total, "heap shrinks back when a grown region is free again");
+        CHECK(pmm_free_pages() > pmm_before, "released region returns pages to the PMM");
     }
 
     /* Stress: random allocate/free with content verification */
