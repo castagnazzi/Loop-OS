@@ -75,6 +75,10 @@ static int clip_x0, clip_y0, clip_x1, clip_y1;     /* current clip, exclusive en
 /* damaged area (bounding box), empty when dx1 <= dx0 */
 static int dx0 = 0, dy0 = 0, dx1 = 0, dy1 = 0;
 
+/* Wallpaper picture loaded from /etc/wallpaper.lwp ("LWP1", w, h, ARGB pixels) */
+static const uint32_t *wp_px = NULL;
+static int wp_w = 0, wp_h = 0;
+
 static struct menu_item menu[MAX_MENU];
 static int menu_count = 0;
 static int menu_open = 0;
@@ -134,22 +138,27 @@ static void text(int x, int y, const char *s, uint32_t c, int scale) {
     }
 }
 
-/* Readable 8x16 text (Latin-1) */
-static void text16(int x, int y, const char *s, uint32_t c) {
-    for (; *s; s++, x += 8) {
-        if (x + 8 <= clip_x0 || x >= clip_x1) continue;
+/* Readable 8x16 text (Latin-1); scale n draws 8n x 16n characters */
+static void text16s(int x, int y, const char *s, uint32_t c, int scale) {
+    for (; *s; s++, x += 8 * scale) {
+        if (x + 8 * scale <= clip_x0 || x >= clip_x1) continue;
         const uint8_t *g = font8x16[(unsigned char)*s];
         for (int r = 0; r < 16; r++) {
-            int py = y + r;
-            if (py < clip_y0 || py >= clip_y1 || !g[r]) continue;
-            uint32_t *row = bb + (size_t)py * sw;
+            if (!g[r]) continue;
             for (int col = 0; col < 8; col++) {
-                int px = x + col;
-                if (((g[r] >> col) & 1) && px >= clip_x0 && px < clip_x1) row[px] = c;
+                if (!((g[r] >> col) & 1)) continue;
+                if (scale == 1) {
+                    int px = x + col, py = y + r;
+                    if (px >= clip_x0 && px < clip_x1 && py >= clip_y0 && py < clip_y1) bb[(size_t)py * sw + px] = c;
+                } else {
+                    fill(x + col * scale, y + r * scale, scale, scale, c);
+                }
             }
         }
     }
 }
+
+static void text16(int x, int y, const char *s, uint32_t c) { text16s(x, y, s, c, 1); }
 
 static uint32_t blend(uint32_t bg, uint32_t fg, unsigned a) {
     unsigned r = (((bg >> 16) & 0xFF) * (255 - a) + ((fg >> 16) & 0xFF) * a) / 255;
@@ -408,18 +417,74 @@ void wm_task_exit(int pid) {
 
 /* ------------------------------------------------------------------ */
 /* Composition */
-static void draw_wallpaper(void) {
-    for (int y = clip_y0; y < clip_y1; y++) {
-        unsigned t = (unsigned)(y * 255 / sh);
-        uint32_t c = RGB(10 + t / 20, 18 + t / 6, 48 + t / 5);
-        fill(clip_x0, y, clip_x1 - clip_x0, 1, c);
+/* Picture blended over the back buffer with a fixed opacity */
+static void picture(int x, int y, const uint32_t *pix, int w, int h, unsigned opacity) {
+    for (int j = 0; j < h; j++) {
+        int py = y + j;
+        if (py < clip_y0 || py >= clip_y1) continue;
+        for (int i = 0; i < w; i++) {
+            int px = x + i;
+            if (px < clip_x0 || px >= clip_x1) continue;
+            uint32_t p = pix[j * w + i];
+            unsigned a = (p >> 24) * opacity / 255;
+            if (!a) continue;
+            uint32_t *d = &bb[(size_t)py * sw + px];
+            *d = blend(*d, p & 0xFFFFFF, a);
+        }
     }
-    /* A large, faint mascot in the middle of the desktop */
-    int scale = sh >= 700 ? 5 : 3;
-    int lw = LOGO_W * scale, lh = LOGO_H * scale;
-    logo((sw - lw) / 2, (sh - TASKBAR_H - lh) / 2 - 20, scale, 60);
-    const char *name = "Loop-OS";
-    text((sw - 7 * 8 * 3) / 2, (sh - TASKBAR_H - lh) / 2 + lh - 8, name, RGB(120, 150, 200), 3);
+}
+
+/* Background gradient (top colour -> bottom colour). Ordered dithering hides
+ * the banding that 8 bits per channel would otherwise show on such a gentle ramp. */
+#define WALL_TOP_R 10
+#define WALL_TOP_G 18
+#define WALL_TOP_B 48
+#define WALL_BOT_R 24
+#define WALL_BOT_G 62
+#define WALL_BOT_B 104
+
+static void draw_wallpaper(void) {
+    static const uint8_t bayer[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+    int x0 = clip_x0 < 0 ? 0 : clip_x0, x1 = clip_x1 > sw ? sw : clip_x1;
+    int y0 = clip_y0 < 0 ? 0 : clip_y0, y1 = clip_y1 > sh ? sh : clip_y1;
+    for (int y = y0; y < y1; y++) {
+        int r = (WALL_TOP_R << 8) + ((WALL_BOT_R - WALL_TOP_R) * y << 8) / sh;
+        int g = (WALL_TOP_G << 8) + ((WALL_BOT_G - WALL_TOP_G) * y << 8) / sh;
+        int b = (WALL_TOP_B << 8) + ((WALL_BOT_B - WALL_TOP_B) * y << 8) / sh;
+        uint32_t *row = bb + (size_t)y * sw;
+        for (int x = x0; x < x1; x++) {
+            int t = bayer[y & 3][x & 3] * 16;
+            row[x] = RGB((r + t) >> 8, (g + t) >> 8, (b + t) >> 8);
+        }
+    }
+
+    /* Mascot and name in the middle of the desktop */
+    int area_h = sh - TASKBAR_H;
+    if (wp_px) {
+        int ix = (sw - wp_w) / 2, iy = (area_h - wp_h) / 2 - 24;
+        picture(ix, iy, wp_px, wp_w, wp_h, 120);
+        const char *name = "Loop-OS";
+        text16s((sw - 7 * 16) / 2, iy + wp_h + 6, name, RGB(140, 170, 215), 2);
+    } else {
+        int scale = sh >= 700 ? 5 : 3;
+        int lw = LOGO_W * scale, lh = LOGO_H * scale;
+        logo((sw - lw) / 2, (area_h - lh) / 2 - 20, scale, 60);
+        text16s((sw - 7 * 16) / 2, (area_h - lh) / 2 + lh, "Loop-OS", RGB(140, 170, 215), 2);
+    }
+}
+
+static void load_wallpaper(void) {
+    struct vnode *n = vfs_lookup("/etc/wallpaper.lwp");
+    if (!n || n->size < 12 || n->size > 8 * 1024 * 1024) return;
+    uint8_t *buf = kmalloc(n->size);
+    if (!buf) return;
+    if (vfs_read(n, 0, buf, n->size) != (long)n->size || memcmp(buf, "LWP1", 4) != 0) { kfree(buf); return; }
+    uint32_t w = buf[4] | (buf[5] << 8) | (buf[6] << 16) | ((uint32_t)buf[7] << 24);
+    uint32_t h = buf[8] | (buf[9] << 8) | (buf[10] << 16) | ((uint32_t)buf[11] << 24);
+    if (w == 0 || h == 0 || w > 2048 || h > 2048 || 12 + (size_t)w * h * 4 != n->size) { kfree(buf); return; }
+    wp_px = (const uint32_t *)(buf + 12);
+    wp_w = (int)w;
+    wp_h = (int)h;
 }
 
 static void draw_window(int slot) {
@@ -699,6 +764,7 @@ int wm_init(void) {
         kprintf("wm: unusual framebuffer channel layout, colours may look wrong\n");
     }
     memset(wins, 0, sizeof(wins));
+    load_wallpaper();
     damage(0, 0, sw, sh);
     return 0;
 }

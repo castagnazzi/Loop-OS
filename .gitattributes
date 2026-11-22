@@ -20,3 +20,6 @@ rootfs/**   text eol=lf
 *.dll       binary
 *.bin       binary
 *.png       binary
+*.lwp       binary
+*.png       binary
+*.gif       binary
