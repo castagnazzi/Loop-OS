@@ -4,6 +4,7 @@
 #include <kernel/blk.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/fat32.h>
+#include <kernel/fs/ntfs.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 
@@ -12,10 +13,13 @@ static void try_mount(struct blkdev *d) {
     path[0] = '\0';
     strcpy(path, "/mnt/");
     strcat(path, d->name);
-    if (fat32_mount(d, path) == 0) {
-        strcpy(d->fs, "fat32");
+    const char *fsname = NULL;
+    if (fat32_mount(d, path) == 0) fsname = "fat32";
+    else if (ntfs_mount(d, path) == 0) fsname = "ntfs";
+    if (fsname) {
+        strcpy(d->fs, fsname);
         strcpy(d->mount, path);
-        kprintf("fs: %s mounted at %s (FAT32, read-only)\n", d->name, path);
+        kprintf("fs: %s mounted at %s (%s, read-only)\n", d->name, path, fsname);
     }
 }
 

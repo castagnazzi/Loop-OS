@@ -195,7 +195,7 @@ no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 - [x] PS/2 mouse + USB HID (teclado/mouse) (PS/2 pronto; USB pendente)
 - [x] VFS layer (mount, open/read/write/close, opendir/readdir) (ramfs gravável + montagem de FS reais)
 - [x] FAT32 driver (boot partition, USB) (somente leitura, em teste; driver de disco ATA e partições MBR/GPT prontos)
-- [ ] ext2/ext3 driver (root partition)
+- [ ] ext2/ext3/ext4 driver (root partition)
 - [x] Ramfs/tmpfs para /dev, /run, /tmp (`/tmp` pronto; /dev e /run pendentes)
 - [ ] Device nodes (/dev/fb0, /dev/kbd, /dev/mouse, /dev/null, /dev/zero)
 
