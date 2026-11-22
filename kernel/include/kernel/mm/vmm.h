@@ -42,6 +42,9 @@ void vmm_switch_context(uint64_t pml4_phys);
 /* Get current PML4 physical address */
 uint64_t vmm_get_pml4(void);
 
+/* HHDM offset (virtual = physical + offset for all RAM) */
+uint64_t vmm_get_hhdm(void);
+
 /* Page size constants */
 #define VMM_PAGE_SIZE 4096
 #define VMM_HUGE_PAGE_SIZE (2 * 1024 * 1024)

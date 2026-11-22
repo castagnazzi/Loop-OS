@@ -49,31 +49,39 @@ extern void *isr_stubs[33];  /* 0-31 exceptions + [32] syscall */
 extern void *irq_stubs[16];
 
 /* Generic ISR handler */
-void isr_common_handler(struct exception_frame *frame) {
-    uint8_t vector = frame->error_code & 0xFF;  // We'll pass vector differently
-    
-    /* For exceptions with error code, it's already on stack */
-    if (vector < 32) {
-        kprintf("Exception %d: %s\n", vector, exception_names[vector]);
-        kprintf("  RIP=0x%lx CS=0x%lx RFLAGS=0x%lx\n", frame->rip, frame->cs, frame->rflags);
-        kprintf("  RSP=0x%lx SS=0x%lx Error=0x%lx\n", frame->rsp, frame->ss, frame->error_code);
+void isr_common_handler(struct trap_frame *tf) {
+    uint64_t vector = tf->vector;
+
+    kprintf("\n*** CPU EXCEPTION %lu: %s ***\n", vector,
+            vector < 32 ? exception_names[vector] : "unknown");
+    kprintf("  RIP=0x%lx CS=0x%lx RFLAGS=0x%lx\n", tf->rip, tf->cs, tf->rflags);
+    kprintf("  RSP=0x%lx SS=0x%lx Error=0x%lx\n", tf->rsp, tf->ss, tf->error_code);
+    kprintf("  RAX=0x%lx RBX=0x%lx RCX=0x%lx RDX=0x%lx\n", tf->rax, tf->rbx, tf->rcx, tf->rdx);
+    kprintf("  RSI=0x%lx RDI=0x%lx RBP=0x%lx\n", tf->rsi, tf->rdi, tf->rbp);
+    if (vector == 14) {
+        uint64_t cr2;
+        asm volatile("mov %%cr2, %0" : "=r"(cr2));
+        kprintf("  CR2=0x%lx (%s, %s, %s)\n", cr2,
+                (tf->error_code & 1) ? "protection violation" : "page not present",
+                (tf->error_code & 2) ? "write" : "read",
+                (tf->error_code & 4) ? "user" : "kernel");
     }
-    
-    /* TODO: Proper exception handling */
+
+    /* TODO: Proper exception handling (kill task, etc.) */
     for (;;) asm volatile("cli; hlt");
 }
 
 /* Generic IRQ handler */
-void irq_common_handler(struct interrupt_frame *frame) {
-    /* IRQ number is passed via stack by stub */
-    uint8_t irq = *(uint8_t *)((uint64_t)frame + sizeof(struct interrupt_frame));
-    
-    if (irq_handlers[irq]) {
-        irq_handlers[irq](frame);
+void irq_common_handler(struct trap_frame *tf) {
+    uint8_t irq = (uint8_t)tf->vector;
+
+    if (irq < 16 && irq_handlers[irq]) {
+        /* The CPU frame (rip, cs, rflags, rsp, ss) starts at &tf->rip */
+        irq_handlers[irq]((struct interrupt_frame *)&tf->rip);
     } else {
         kprintf("Unhandled IRQ %d\n", irq);
     }
-    
+
     /* Send EOI */
     pic_send_eoi(irq);
 }

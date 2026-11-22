@@ -41,6 +41,17 @@ struct exception_frame {
     uint64_t error_code;
 } __attribute__((packed));
 
+/* Full trap frame as built by isr_common / irq_common (interrupts.S):
+ * general registers (pushed last = lowest address), then the vector and
+ * error code pushed by the stubs, then the CPU-pushed interrupt frame. */
+struct trap_frame {
+    uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
+    uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
+    uint64_t vector;
+    uint64_t error_code;
+    uint64_t rip, cs, rflags, rsp, ss;
+} __attribute__((packed));
+
 /* IRQ handler type */
 typedef void (*irq_handler_t)(struct interrupt_frame *frame);
 

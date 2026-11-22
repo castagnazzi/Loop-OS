@@ -6,6 +6,8 @@
 #include <kernel/string.h>
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/mm/heap.h>
+#include <kernel/mm/mm_test.h>
 #include <kernel/arch/x86_64/gdt.h>
 #include <kernel/arch/x86_64/idt.h>
 #include <kernel/arch/x86_64/serial.h>
@@ -61,8 +63,12 @@ static void init_memory(void) {
                 i, entry->base, entry->length, entry->type);
     }
 
-    /* Initialize physical memory manager */
-    pmm_init(mm_resp);
+    /* Initialize physical memory manager (needs the HHDM offset) */
+    struct limine_hhdm_response *hhdm = limine_hhdm_request.response;
+    if (!hhdm) {
+        kernel_panic_early("No HHDM response from Limine");
+    }
+    pmm_init(mm_resp, hhdm->offset);
 }
 
 /* ---------------------------------------------------------------- */
@@ -109,9 +115,19 @@ void kernel_main(void) {
     /* Clear BSS */
     clear_bss();
 
+    /* CPU tables first, so any fault below prints a diagnostic instead of
+     * triple-faulting silently */
+    gdt_init();
+    idt_init();
+
     /* Initialize subsystems */
     init_memory();
     init_paging();
+    heap_init();
+
+    if (mm_selftest() != 0) {
+        kernel_panic("Memory self test failed");
+    }
 
     /* Now we're in higher-half, call higher-half main */
     /* This is a trampoline - real work in kernel_main_higher_half */
@@ -124,11 +140,6 @@ void kernel_main(void) {
 void kernel_main_higher_half(void) {
     kprintf("\n=== Loop-OS Kernel (Higher Half) ===\n");
     kprintf("Kernel VMA: 0x%lx\n", (uint64_t)&kernel_main_higher_half);
-
-    /* GDT & IDT */
-    gdt_init();
-    idt_init();
-    kprintf("GDT/IDT initialized\n");
 
     /* Initialize framebuffer */
     init_framebuffer();

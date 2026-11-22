@@ -35,9 +35,11 @@ LIMINE_REQUEST limine_framebuffer_request, 0x9d5827dcd881dd75, 0xa3148604f6fab11
 /* Memory map request */
 LIMINE_REQUEST limine_memmap_request, 0x67cf3d9d378a806f, 0xe304acdfc50c3c62
 
-/* Entry point request (+ entry point address) */
+/* Entry point request (+ entry point address).
+ * Must point at _start: kernel_main does the full init (serial, memory,
+ * paging, GDT/IDT) and then calls kernel_main_higher_half itself. */
 LIMINE_REQUEST limine_entry_point_request, 0x13d86c035a1cd3e1, 0x2b0caa89d8f3026a
-    .quad _start_kernel
+    .quad _start
 
 /* Kernel file request */
 LIMINE_REQUEST limine_kernel_file_request, 0xad97e90e83f1ed67, 0x31eb5d1c5ff23b69
@@ -74,6 +76,10 @@ _start:
     /* Clear BSS - will be done in C kernel_main */
     /* Save boot info pointers from Limine */
     
+    /* Keep the SysV ABI stack alignment and give GDB a clean frame end */
+    xorl %ebp, %ebp
+    andq $-16, %rsp
+
     /* Call kernel main (C function) */
     call kernel_main
     

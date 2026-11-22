@@ -225,7 +225,7 @@ isr_common:
     pushq %r14
     pushq %r15
     
-    /* Pass pointer to exception_frame to handler */
+    /* Pass pointer to struct trap_frame to handler */
     movq %rsp, %rdi
     call isr_common_handler
     
@@ -277,17 +277,15 @@ irq_common:
     pushq %r11
     pushq %r12
     pushq %r13
-    popq %r14
-    popq %r15
+    pushq %r14
+    pushq %r15
     
-    /* Pass pointer to interrupt_frame to handler */
-    /* IRQ number is at rsp + 8*16 (after pushes) + 8 (dummy) = rsp + 136 */
+    /* Pass pointer to struct trap_frame (saved regs + vector + error code +
+     * CPU frame) to the handler */
     movq %rsp, %rdi
     call irq_common_handler
     
     /* Restore */
-    pushq %r14
-    pushq %r15
     popq %r15
     popq %r14
     popq %r13

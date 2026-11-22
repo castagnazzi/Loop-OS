@@ -10,8 +10,9 @@
 struct limine_memmap_entry;
 struct limine_memmap_response;
 
-/* Initialize PMM from Limine memory map */
-void pmm_init(struct limine_memmap_response *mm);
+/* Initialize PMM from Limine memory map; 'hhdm_offset' is the virtual
+ * offset where Limine maps all physical memory. */
+void pmm_init(struct limine_memmap_response *mm, uint64_t hhdm_offset);
 
 /* Allocate physical pages */
 void *pmm_alloc(size_t count);           /* Allocate 'count' contiguous pages */
