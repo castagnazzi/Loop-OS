@@ -11,6 +11,9 @@
 #include <kernel/drivers/fb.h>
 #include <kernel/drivers/rtc.h>
 #include <kernel/gui.h>
+#include <kernel/blk.h>
+#include <kernel/mm/pmm.h>
+#include <kernel/arch/x86_64/cpu.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/timer.h>
 #include <kernel/mm/vmm.h>
@@ -130,6 +133,8 @@ static long sys_open(uint64_t upath, uint64_t flags) {
     struct vnode *n = vfs_lookup(abs);
     if (!n && (flags & O_CREAT)) n = vfs_create(abs, 0);
     if (!n) return -SYS_ENOENT;
+
+    if (n->system && (flags & (O_WRONLY | O_RDWR | O_TRUNC | O_APPEND))) return -1;   /* EPERM */
 
     int idx;
     struct fd *f = alloc_fd(&idx);
@@ -337,6 +342,36 @@ static long sys_taskinfo(int index, uint64_t ubuf) {
 }
 
 /* ---------------------------------------------------------------- */
+static long sys_sysinfo(uint64_t ubuf) {
+    struct sys_sysinfo si;
+    memset(&si, 0, sizeof(si));
+    strcpy(si.os, "Loop-OS");
+    strcpy(si.version, "0.4");
+    strcpy(si.kernel, "x86_64");
+
+    const char *brand = cpu_brand;
+    while (*brand == ' ') brand++;
+    strncpy(si.cpu, brand, sizeof(si.cpu) - 1);
+    strncpy(si.vendor, cpu_vendor, sizeof(si.vendor) - 1);
+
+    si.mem_total_kb = (uint64_t)pmm_total_pages() * 4;
+    si.mem_free_kb = (uint64_t)pmm_free_pages() * 4;
+    si.fb_w = fb_width();
+    si.fb_h = fb_height();
+    si.uptime_ms = timer_micros() / 1000;
+
+    struct task_info ti;
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (task_info(i, &ti) == 0 && ti.state != 4) si.ntasks++;
+    }
+    for (int i = 0; i < blk_count(); i++) {
+        if (!blk_get(i)->parent) si.ndisks++;
+    }
+    if (copy_to_user(ubuf, &si, sizeof(si)) != 0) return -SYS_EFAULT;
+    return 0;
+}
+
+/* ---------------------------------------------------------------- */
 /* Windows */
 static long sys_win_create(uint64_t w, uint64_t h, uint64_t utitle) {
     char title[32];
@@ -409,6 +444,7 @@ void syscall_dispatch(struct syscall_frame *f) {
     case SYS_WIN_EVENT:   ret = sys_win_event((int)a1, a2, a3); break;
     case SYS_WIN_DESTROY: ret = wm_destroy((int)a1, current_task->pid); break;
     case SYS_FD_AVAIL:    ret = sys_fd_avail((int)a1); break;
+    case SYS_SYSINFO:   ret = sys_sysinfo(a1); break;
     case SYS_WALLTIME: {
         struct rtc_time t;
         rtc_read(&t);

@@ -26,6 +26,7 @@ struct vnode {
     size_t size, cap;
     int refs;                  /* open file descriptors */
     int unlinked;              /* removed from the tree, freed on last close */
+    int system;                /* came with the system image: cannot be changed or removed */
     struct vnode *parent, *child, *next;
     const struct vnode_ops *ops;   /* non-NULL: backed by a filesystem driver */
     void *priv;

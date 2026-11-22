@@ -287,6 +287,8 @@ static void delete_selected(void) {
         set_message("excluido", 0);
     } else if (r == -39) {
         set_message("a pasta nao esta vazia", 1);
+    } else if (r == -1) {
+        set_message("arquivo do sistema: protegido", 1);
     } else if (r == -30) {
         set_message("somente leitura", 1);
     } else {

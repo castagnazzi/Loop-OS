@@ -24,7 +24,7 @@ CFLAGS   := -std=gnu11 -O2 -g -Wall -Wextra \
 
 LDFLAGS  := -nostdlib -static -z max-page-size=0x1000 -T user.ld
 
-PROGS    := init sh hello ls cat sleep ps kill spin crash mkdir rm cp wc term notepad files calc taskmgr
+PROGS    := init sh hello ls cat sleep ps kill spin crash mkdir rm cp wc term notepad files calc taskmgr about
 BINS     := $(addprefix $(BUILD)/bin/,$(PROGS))
 LIB      := $(BUILD)/libulib.a
 CRT0     := $(BUILD)/crt0.o

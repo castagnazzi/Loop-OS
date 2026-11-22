@@ -24,7 +24,7 @@ static void load(void) {
 
 static void save(void) {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC);
-    if (fd < 0) { status = "erro ao salvar"; return; }
+    if (fd < 0) { status = "nao e possivel salvar aqui"; return; }
     write(fd, text, (size_t)len);
     close(fd);
     status = "salvo";

@@ -48,6 +48,7 @@ void sleep_ms(unsigned long ms);
 void clear_screen(void);
 int fd_avail(int fd);                                      /* bytes readable now, -1 at EOF */
 long walltime(void);                                       /* seconds since midnight */
+int sysinfo(struct sys_sysinfo *info);
 int taskinfo(int index, struct sys_taskinfo *info);
 
 /* Strings and memory */

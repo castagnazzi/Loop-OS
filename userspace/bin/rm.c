@@ -11,7 +11,9 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         long r = unlink(argv[i]);
         if (r < 0) {
-            printf("rm: cannot remove '%s' (%s)\n", argv[i], r == -39 ? "directory not empty" : "no such file");
+            const char *why = r == -39 ? "directory not empty" : r == -1 ? "system file, protected"
+                              : r == -30 ? "read-only filesystem" : "no such file";
+            printf("rm: cannot remove '%s' (%s)\n", argv[i], why);
             status = 1;
         }
     }

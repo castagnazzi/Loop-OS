@@ -51,6 +51,7 @@ pid_t fork(void) { return (pid_t)sys0(SYS_FORK); }
 int execve(const char *path, char *const argv[]) { return (int)sys2(SYS_EXECVE, (long)path, (long)argv); }
 int mkdir(const char *path) { return (int)sys1(SYS_MKDIR, (long)path); }
 int unlink(const char *path) { return (int)sys1(SYS_UNLINK, (long)path); }
+int sysinfo(struct sys_sysinfo *info) { return (int)sys1(SYS_SYSINFO, (long)info); }
 int spawn(const char *path, char *const argv[]) { return (int)sys2(SYS_SPAWN, (long)path, (long)argv); }
 pid_t waitpid(pid_t pid, int *status, int options) {
     return (pid_t)sys4(SYS_WAIT4, pid, (long)status, options, 0);

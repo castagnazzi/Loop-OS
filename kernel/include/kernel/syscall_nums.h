@@ -43,6 +43,7 @@
 #define SYS_WIN_EVENT   112  /* win_event(id, struct win_event *, block) -> 1, 0 (none), < 0 */
 #define SYS_WIN_DESTROY 113  /* win_destroy(id) */
 #define SYS_FD_AVAIL    114  /* fd_avail(fd): bytes readable without blocking, -1 at EOF */
+#define SYS_SYSINFO     116  /* sysinfo(struct sys_sysinfo *) */
 #define SYS_WALLTIME    115  /* walltime() -> hour*3600 + minute*60 + second */
 
 /* errno values used by the kernel */
@@ -71,6 +72,18 @@ struct sys_dirent {
     uint32_t is_dir;
     uint32_t pad;
     uint64_t size;        /* files: size in bytes */
+};
+
+struct sys_sysinfo {
+    char os[16];
+    char version[16];
+    char kernel[24];
+    char cpu[64];
+    char vendor[16];
+    uint64_t mem_total_kb, mem_free_kb;
+    uint32_t fb_w, fb_h;
+    uint32_t ntasks, ndisks;
+    uint64_t uptime_ms;
 };
 
 struct sys_taskinfo {

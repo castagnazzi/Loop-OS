@@ -153,7 +153,7 @@ qemu-system-x86_64 -cdrom build/loop-os.iso -m 256 -serial stdio
 Com framebuffer, o kernel abre o desktop e lanca o Terminal (que roda `/bin/sh`).
 Programas em `/bin`: `ls cat cp mkdir rm wc hello ps kill sleep spin crash` e os
 apps graficos `term notepad files calc taskmgr`. Os itens do menu Iniciar ficam em
-`rootfs/etc/menu` (`Rotulo|comando`). O app Arquivos tem arvore de pastas e lista com tamanhos. O relogio mostra a hora do RTC: use
+`rootfs/etc/menu` (`Rotulo|comando`). O app Arquivos tem arvore de pastas e lista com tamanhos. O menu tem "Sobre o Loop-OS" (assinatura e dados do sistema), Reiniciar e Desligar. O desktop abre vazio, sem terminal. Os arquivos que vem com o sistema (`/bin`, `/etc`...) sao protegidos contra apagar e sobrescrever; `/tmp` e arquivos novos sao livres. O relogio mostra a hora do RTC: use
 `-rtc base=localtime` no QEMU para a hora local.
 
 O código do userspace está em `userspace/` (ulib + programas). O scaffold antigo,
@@ -236,7 +236,7 @@ no initrd. Sobre sistemas de arquivos: tudo vive na RAM e se perde ao reiniciar.
 - [ ] Desktop icons: grid, drag-drop, context menu
 - [ ] Notifications daemon (toast, persistência, ações)
 - [ ] Settings: wallpaper, theme, keybindings, network, display
-- [ ] Session management: logout, reboot, shutdown via syscalls
+- [x] Session management: logout, reboot, shutdown via syscalls (desligar e reiniciar pelo menu, ACPI real; sem logout)
 - [ ] Theme engine: CSS-like ou estruturado (colors, radii, fonts)
 
 **Entregável**: Desktop usável com painel, menu, ícones, notificações, temas.

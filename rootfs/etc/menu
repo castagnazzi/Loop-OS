@@ -1,7 +1,9 @@
-# Start menu: Label|command [argument]    (@reboot restarts the machine)
+# Start menu: Label|command [argument]    (@poweroff shuts down, @reboot restarts)
 Terminal|/bin/term
 Bloco de Notas|/bin/notepad /tmp/nota.txt
 Arquivos|/bin/files /
 Calculadora|/bin/calc
 Gerenciador de Tarefas|/bin/taskmgr
+Sobre o Loop-OS|/bin/about
 Reiniciar|@reboot
+Desligar|@poweroff

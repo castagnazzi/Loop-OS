@@ -99,6 +99,7 @@ int vfs_unlink(const char *path) {
     struct vnode *n = vfs_lookup(path);
     if (!n) return -ENOENT;
     if (n == root) return -EBUSY;
+    if (n->system) return -1;                                       /* EPERM: system file */
     if (n->ops || (n->parent && n->parent->ops)) return -30;      /* read-only filesystem */
     if (n->is_dir && n->child) return -ENOTEMPTY;
     struct vnode **pp = &n->parent->child;
@@ -143,6 +144,7 @@ long vfs_read(struct vnode *n, size_t off, void *buf, size_t count) {
 
 long vfs_write(struct vnode *n, size_t off, const void *buf, size_t count) {
     if (n->is_dir) return -EINVAL;
+    if (n->system) return -1;                  /* EPERM: system file */
     if (n->ops) return -13;                    /* read-only filesystem */
     if (off > n->size) {                       /* sparse gap reads as zeros */
         if (reserve(n, off) != 0) return -12;
@@ -156,7 +158,7 @@ long vfs_write(struct vnode *n, size_t off, const void *buf, size_t count) {
 }
 
 void vfs_truncate(struct vnode *n) {
-    if (n->ops) return;
+    if (n->ops || n->system) return;
     n->size = 0;
 }
 
@@ -211,6 +213,7 @@ static void copy_dir(struct vnode *dst, const char *path) {
             struct initrd_node in;
             if (initrd_lookup(child, &in) == 0 && in.size) vfs_write(n, 0, in.data, in.size);
         }
+        n->system = 1;       /* protect it only after its contents are in place */
     }
 }
 

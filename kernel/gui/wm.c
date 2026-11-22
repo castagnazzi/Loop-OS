@@ -16,6 +16,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/mm/heap.h>
 #include <kernel/arch/x86_64/idt.h>
+#include <kernel/arch/x86_64/power.h>
 #include <kernel/stdio.h>
 #include <kernel/string.h>
 #include "../drivers/font8x8.h"
@@ -230,10 +231,8 @@ static int menu_height(void) { return menu_count * MENU_ITEM_H + 8; }
 static int menu_y(void) { return sh - TASKBAR_H - menu_height(); }
 
 static void launch(const char *cmd) {
-    if (!strcmp(cmd, "@reboot")) {
-        asm volatile("outb %%al, %%dx" : : "a"((uint8_t)0xFE), "d"((uint16_t)0x64));
-        return;
-    }
+    if (!strcmp(cmd, "@reboot")) power_reboot();
+    if (!strcmp(cmd, "@poweroff")) power_off();
     static char buf[96];
     strncpy(buf, cmd, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
@@ -707,7 +706,6 @@ int wm_init(void) {
 void wm_run(void) {
     update_clock();
     compose();
-    launch("/bin/term");
 
     for (;;) {
         handle_keyboard();
