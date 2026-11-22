@@ -33,6 +33,9 @@ extern volatile struct limine_smp_request limine_smp_request;
 extern volatile struct limine_hhdm_request limine_hhdm_request;
 
 
+/* Console character size in pixels (the 8x8 font is stretched to this) */
+#define CONSOLE_CELL_PX 12
+
 /* Early framebuffer info */
 struct limine_framebuffer *early_fb = NULL;
 
@@ -126,7 +129,7 @@ static void init_framebuffer(void) {
     int cw = (int)fb_width() - 2 * margin;
     int ch = (int)fb_height() - top - 2 * margin;
     fb_fill_rect(margin - 4, top + margin - 4, cw + 8, ch + 8, fb_rgb(6, 10, 22));
-    fbcon_init(margin, top + margin, cw, ch, 2, fb_rgb(205, 214, 232), fb_rgb(6, 10, 22));
+    fbcon_init(margin, top + margin, cw, ch, CONSOLE_CELL_PX, fb_rgb(205, 214, 232), fb_rgb(6, 10, 22));
     kprintf_set_sink(fbcon_putc);   /* replays everything logged so far */
 }
 

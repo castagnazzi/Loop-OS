@@ -196,6 +196,15 @@ isr_common:
     
     /* Remove vector and error code */
     addq $16, %rsp
+
+    /* Returning to ring 3: make sure the saved SS carries RPL 3.
+     * Real CPUs (and current QEMU) already leave SS = 0x1B after SYSRET, but
+     * old QEMU releases set it to 0x18, which makes the IRETQ below fault
+     * with #GP (selector RPL != CS RPL). Harmless when it is already right. */
+    testb $3, 8(%rsp)           /* saved CS */
+    jz 1f
+    orq $3, 32(%rsp)            /* saved SS */
+1:
     iretq
 .size isr_common, . - isr_common
 
@@ -252,5 +261,14 @@ irq_common:
     
     /* Remove IRQ number and dummy error code */
     addq $16, %rsp
+
+    /* Returning to ring 3: make sure the saved SS carries RPL 3.
+     * Real CPUs (and current QEMU) already leave SS = 0x1B after SYSRET, but
+     * old QEMU releases set it to 0x18, which makes the IRETQ below fault
+     * with #GP (selector RPL != CS RPL). Harmless when it is already right. */
+    testb $3, 8(%rsp)           /* saved CS */
+    jz 1f
+    orq $3, 32(%rsp)            /* saved SS */
+1:
     iretq
 .size irq_common, . - irq_common

@@ -25,7 +25,8 @@ uint32_t fb_rgb(uint8_t r, uint8_t g, uint8_t b);
 void fb_putpixel(int x, int y, uint32_t color);
 void fb_fill_rect(int x, int y, int w, int h, uint32_t color);
 void fb_clear(uint32_t color);
-void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg, int scale);
+void fb_draw_glyph(int x, int y, char c, uint32_t fg, uint32_t bg, int size_px);  /* any size >= 8 */
+void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg, int scale);      /* integer scale */
 void fb_draw_string(int x, int y, const char *s, uint32_t fg, uint32_t bg, int scale);
 
 /* Mouse cursor overlay (pixels underneath are saved/restored) */
@@ -38,9 +39,9 @@ void fb_cursor_show(void);
  * Returns the y coordinate where free drawing space starts. */
 int fb_draw_boot_screen(void);
 
-/* Text console inside a rectangle of the screen. Glyphs are 8x8 scaled by
- * 'scale'. Handles \n \r \t \b, wraps lines and scrolls. */
-void fbcon_init(int x, int y, int w, int h, int scale, uint32_t fg, uint32_t bg);
+/* Text console inside a rectangle of the screen. Each character cell is
+ * 'cell_px' x 'cell_px' pixels (the 8x8 font stretched, e.g. 12). Handles \n \r \t \b, wraps lines and scrolls. */
+void fbcon_init(int x, int y, int w, int h, int cell_px, uint32_t fg, uint32_t bg);
 void fbcon_putc(char c);
 void fbcon_clear(void);
 

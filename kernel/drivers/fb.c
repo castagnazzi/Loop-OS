@@ -185,21 +185,30 @@ void fb_clear(uint32_t color) {
     fb_fill_rect(0, 0, (int)fb_w, (int)fb_h, color);
 }
 
-void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg, int scale) {
+/* Draw one 8x8 glyph stretched to size_px x size_px (nearest neighbour, so
+ * non-integer ratios such as 12/8 work; stroke widths alternate 1 and 2). */
+void fb_draw_glyph(int x, int y, char c, uint32_t fg, uint32_t bg, int size_px) {
     if (!fb_base) return;
-    if (scale < 1) scale = 1;
+    if (size_px < 8) size_px = 8;
     unsigned char uc = (unsigned char)c;
     if (uc < FONT_FIRST || uc > FONT_LAST) uc = '?';
     const uint8_t *glyph = font8x8[uc - FONT_FIRST];
 
+    if (bg != FB_TRANSPARENT) fb_fill_rect(x, y, size_px, size_px, bg);
+
     for (int row = 0; row < 8; row++) {
+        int y0 = row * size_px / 8, y1 = (row + 1) * size_px / 8;
         for (int col = 0; col < 8; col++) {
-            int on = (glyph[row] >> col) & 1;     /* bit 0 = leftmost pixel */
-            uint32_t color = on ? fg : bg;
-            if (color == FB_TRANSPARENT) continue;
-            fb_fill_rect(x + col * scale, y + row * scale, scale, scale, color);
+            if (!((glyph[row] >> col) & 1)) continue;   /* bit 0 = leftmost pixel */
+            int x0 = col * size_px / 8, x1 = (col + 1) * size_px / 8;
+            fb_fill_rect(x + x0, y + y0, x1 - x0, y1 - y0, fg);
         }
     }
+}
+
+void fb_draw_char(int x, int y, char c, uint32_t fg, uint32_t bg, int scale) {
+    if (scale < 1) scale = 1;
+    fb_draw_glyph(x, y, c, fg, bg, 8 * scale);
 }
 
 void fb_draw_string(int x, int y, const char *s, uint32_t fg, uint32_t bg, int scale) {
@@ -212,6 +221,20 @@ void fb_draw_string(int x, int y, const char *s, uint32_t fg, uint32_t bg, int s
 
 /* ------------------------------------------------------------------ */
 /* Boot screen */
+
+/* Placeholder logo: a ring with a dot in the middle, inside a 28x28 box whose
+ * top-left corner is (x, y). Replace this function with your own artwork. */
+static void draw_logo(int x, int y) {
+    const int r = 14, cx = x + r, cy = y + r;
+    uint32_t ring = fb_rgb(80, 160, 255), dot = fb_rgb(240, 245, 255);
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int d2 = dx * dx + dy * dy;
+            if (d2 <= 13 * 13 && d2 >= 9 * 9) fb_putpixel(cx + dx, cy + dy, ring);
+            else if (d2 <= 4 * 4) fb_putpixel(cx + dx, cy + dy, dot);
+        }
+    }
+}
 int fb_draw_boot_screen(void) {
     if (!fb_base) return 0;
 
@@ -227,11 +250,7 @@ int fb_draw_boot_screen(void) {
     fb_fill_rect(0, 0, (int)fb_w, bar_h, fb_rgb(24, 28, 44));
     fb_fill_rect(0, bar_h, (int)fb_w, 3, fb_rgb(80, 160, 255));
 
-    /* Logo: four colored squares */
-    fb_fill_rect(16, 14, 12, 12, fb_rgb(255, 90, 90));
-    fb_fill_rect(30, 14, 12, 12, fb_rgb(90, 220, 120));
-    fb_fill_rect(16, 28, 12, 12, fb_rgb(90, 160, 255));
-    fb_fill_rect(30, 28, 12, 12, fb_rgb(255, 210, 80));
+    draw_logo(16, 14);
 
     fb_draw_string(60, 12, "Loop-OS", fb_rgb(240, 245, 255), FB_TRANSPARENT, 3);
     fb_draw_string(60, 38, "x86_64 kernel - boot log", fb_rgb(150, 170, 200), FB_TRANSPARENT, 1);
@@ -242,20 +261,20 @@ int fb_draw_boot_screen(void) {
 /* ------------------------------------------------------------------ */
 /* Text console */
 static int con_x, con_y, con_w, con_h;     /* viewport in pixels */
-static int con_scale = 1;
+static int con_cell = 8;                   /* character cell size in pixels */
 static int con_cols, con_rows;
 static int con_cx, con_cy;                 /* cursor in cells */
 static uint32_t con_fg, con_bg;
 static int con_ready = 0;
 
-void fbcon_init(int x, int y, int w, int h, int scale, uint32_t fg, uint32_t bg) {
+void fbcon_init(int x, int y, int w, int h, int cell_px, uint32_t fg, uint32_t bg) {
     if (!fb_base) return;
-    if (scale < 1) scale = 1;
+    if (cell_px < 8) cell_px = 8;
     con_x = x; con_y = y; con_w = w; con_h = h;
-    con_scale = scale;
+    con_cell = cell_px;
     con_fg = fg; con_bg = bg;
-    con_cols = w / (8 * scale);
-    con_rows = h / (8 * scale);
+    con_cols = w / cell_px;
+    con_rows = h / cell_px;
     con_cx = con_cy = 0;
     if (con_cols < 1 || con_rows < 1) return;
     fb_fill_rect(con_x, con_y, con_w, con_h, con_bg);
@@ -269,7 +288,7 @@ void fbcon_clear(void) {
 }
 
 static void con_scroll(void) {
-    int cell = 8 * con_scale;
+    int cell = con_cell;
     int move_rows = (con_rows - 1) * cell;
 
     /* Raw copy below: keep the cursor (and its saved pixels) out of the way */
@@ -297,7 +316,7 @@ static void con_newline(void) {
 
 void fbcon_putc(char c) {
     if (!con_ready) return;
-    int cell = 8 * con_scale;
+    int cell = con_cell;
 
     switch (c) {
     case '\n':
@@ -326,6 +345,6 @@ void fbcon_putc(char c) {
     }
 
     if (con_cx >= con_cols) con_newline();
-    fb_draw_char(con_x + con_cx * cell, con_y + con_cy * cell, c, con_fg, con_bg, con_scale);
+    fb_draw_glyph(con_x + con_cx * cell, con_y + con_cy * cell, c, con_fg, con_bg, cell);
     con_cx++;
 }
