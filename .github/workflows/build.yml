@@ -1,0 +1,115 @@
+name: Build Loop-OS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc g++ make cmake ninja-build \
+            bison flex libgmp-dev libmpfr-dev libmpc-dev libisl-dev \
+            texinfo xorriso qemu-system-x86 grub-pc-bin grub-efi-amd64-bin \
+            mtools dosfstools curl wget git python3 pkg-config libssl-dev
+
+      - name: Build toolchain
+        run: |
+          cd toolchain
+          ./build-toolchain.sh
+        env:
+          MAKEFLAGS: -j$(nproc)
+
+      - name: Add toolchain to PATH
+        run: |
+          echo "$(pwd)/toolchain/local/bin" >> $GITHUB_PATH
+
+      - name: Build kernel
+        run: make kernel
+        env:
+          PATH: ${{ env.PATH }}:$(pwd)/toolchain/local/bin
+
+      - name: Build ISO
+        run: make iso
+        env:
+          PATH: ${{ env.PATH }}:$(pwd)/toolchain/local/bin
+
+      - name: Test boot (smoke test)
+        run: |
+          timeout 30 qemu-system-x86_64 \
+            -m 256M -nographic -no-reboot \
+            -drive file=build/loop-os.iso,format=raw,if=virtio \
+            -serial stdio \
+            -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+            || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: loop-os-${{ github.sha }}
+          path: |
+            build/kernel.elf
+            build/loop-os.iso
+          retention-days: 30
+
+  build-docker:
+    name: Build (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t loop-os-builder -f toolchain/Dockerfile .
+
+      - name: Build in Docker
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/src loop-os-builder make
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: loop-os-docker-${{ github.sha }}
+          path: |
+            build/kernel.elf
+            build/loop-os.iso
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: [build, build-docker]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/loop-os-*/build/kernel.elf
+            artifacts/loop-os-*/build/loop-os.iso
+          generate_release_notes: true

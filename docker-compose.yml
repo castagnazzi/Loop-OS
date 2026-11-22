@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: toolchain/Dockerfile
+    image: loop-os-builder:latest
+    volumes:
+      - .:/src
+    working_dir: /src
+    # Para build da toolchain
+    command: make toolchain
+    profiles:
+      - toolchain
+
+  build:
+    image: loop-os-builder:latest
+    volumes:
+      - .:/src
+    working_dir: /src
+    command: make
+    profiles:
+      - build
+    depends_on:
+      - builder
+
+  run:
+    image: loop-os-builder:latest
+    volumes:
+      - .:/src
+    working_dir: /src
+    # Headless QEMU (serial only)
+    command: qemu-system-x86_64 -m 512M -nographic -serial stdio -drive file=build/loop-os.iso,format=raw,if=virtio
+    profiles:
+      - run
+    depends_on:
+      - build
+
+  run-gui:
+    image: loop-os-builder:latest
+    volumes:
+      - .:/src
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
+    working_dir: /src
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    command: make run
+    profiles:
+      - run-gui
+    depends_on:
+      - build
+
+  debug:
+    image: loop-os-builder:latest
+    volumes:
+      - .:/src
+    working_dir: /src
+    ports:
+      - "1234:1234"
+    command: qemu-system-x86_64 -m 512M -nographic -serial stdio -drive file=build/loop-os.iso,format=raw,if=virtio -s -S
+    profiles:
+      - debug
+    depends_on:
+      - build
+
+  shell:
+    image: loop-os-builder:latest
+    volumes:
+      - .:/src
+    working_dir: /src
+    entrypoint: /bin/bash
+    profiles:
+      - shell
