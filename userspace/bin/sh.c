@@ -31,7 +31,7 @@ static int read_line(char *buf, int max) {
                 len--;
                 write(STDOUT_FILENO, "\b \b", 3);
             }
-        } else if (c >= 32 && c < 127 && len < max - 1) {
+        } else if ((unsigned char)c >= 32 && (unsigned char)c != 127 && len < max - 1) {
             buf[len++] = c;
             write(STDOUT_FILENO, &c, 1);
         }

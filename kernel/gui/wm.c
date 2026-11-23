@@ -61,6 +61,7 @@ struct window {
 struct menu_item {
     char label[32];
     char cmd[96];
+    char icon[12];
 };
 
 static struct window wins[MAX_WINDOWS];
@@ -107,7 +108,7 @@ static void damage(int x, int y, int w, int h) {
 }
 
 static void damage_window(struct window *w) {
-    damage(w->x, w->y, w->w + 2, w->h + TITLE_H + 1);
+    damage(w->x - 4, w->y - 3, w->w + 2 + 14, w->h + TITLE_H + 1 + 14);     /* includes the shadow */
 }
 
 /* ------------------------------------------------------------------ */
@@ -224,6 +225,13 @@ static void load_menu(void) {
             *bar = '\0';
             strncpy(menu[menu_count].label, p, sizeof(menu[0].label) - 1);
             menu[menu_count].label[sizeof(menu[0].label) - 1] = '\0';
+            menu[menu_count].icon[0] = '\0';
+            char *bar2 = strchr(bar + 1, '|');
+            if (bar2) {
+                *bar2 = '\0';
+                strncpy(menu[menu_count].icon, bar2 + 1, sizeof(menu[0].icon) - 1);
+                menu[menu_count].icon[sizeof(menu[0].icon) - 1] = '\0';
+            }
             strncpy(menu[menu_count].cmd, bar + 1, sizeof(menu[0].cmd) - 1);
             menu[menu_count].cmd[sizeof(menu[0].cmd) - 1] = '\0';
             menu_count++;
@@ -488,14 +496,167 @@ static void load_wallpaper(void) {
     wp_h = (int)h;
 }
 
+/* ------------------------------------------------------------------ */
+/* Procedural icons, drawn on a 16x16 grid scaled to 'size' pixels */
+static void shade(int x, int y, int w, int h, int alpha) {       /* darken the area by alpha/256 */
+    int x0 = x < clip_x0 ? clip_x0 : x, y0 = y < clip_y0 ? clip_y0 : y;
+    int x1 = x + w > clip_x1 ? clip_x1 : x + w, y1 = y + h > clip_y1 ? clip_y1 : y + h;
+    for (int j = y0; j < y1; j++) {
+        uint32_t *row = bb + (size_t)j * sw;
+        for (int i = x0; i < x1; i++) {
+            uint32_t p = row[i];
+            uint32_t r = ((p >> 16) & 255) * (256 - alpha) >> 8;
+            uint32_t g = ((p >> 8) & 255) * (256 - alpha) >> 8;
+            uint32_t b = (p & 255) * (256 - alpha) >> 8;
+            row[i] = (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+static void ru(int ix, int iy, int size, int x, int y, int w, int h, uint32_t c) {
+    int px = ix + x * size / 16, py = iy + y * size / 16;
+    int pw = (x + w) * size / 16 - x * size / 16, ph = (y + h) * size / 16 - y * size / 16;
+    if (pw < 1) pw = 1;
+    if (ph < 1) ph = 1;
+    fill(px, py, pw, ph, c);
+}
+
+static void disc(int cx, int cy, int r, int r_in, uint32_t c) {      /* filled circle, or ring when r_in > 0 */
+    for (int j = -r; j <= r; j++) {
+        for (int i = -r; i <= r; i++) {
+            int d = i * i + j * j;
+            if (d <= r * r && d >= r_in * r_in) fill(cx + i, cy + j, 1, 1, c);
+        }
+    }
+}
+
+static void draw_icon(const char *name, int ix, int iy, int size) {
+    if (!strcmp(name, "term")) {
+        ru(ix, iy, size, 1, 2, 14, 12, RGB(20, 24, 36));
+        ru(ix, iy, size, 1, 2, 14, 2, RGB(90, 150, 230));
+        ru(ix, iy, size, 3, 6, 1, 1, RGB(120, 230, 150)); ru(ix, iy, size, 4, 7, 1, 1, RGB(120, 230, 150));
+        ru(ix, iy, size, 3, 8, 1, 1, RGB(120, 230, 150));
+        ru(ix, iy, size, 7, 9, 4, 1, RGB(200, 210, 230));
+    } else if (!strcmp(name, "note")) {
+        ru(ix, iy, size, 3, 1, 10, 14, RGB(240, 242, 248));
+        ru(ix, iy, size, 3, 1, 10, 2, RGB(230, 180, 70));
+        for (int k = 0; k < 4; k++) ru(ix, iy, size, 5, 5 + k * 2, 6, 1, RGB(120, 130, 160));
+    } else if (!strcmp(name, "files")) {
+        ru(ix, iy, size, 1, 3, 6, 3, RGB(220, 170, 60));
+        ru(ix, iy, size, 1, 5, 14, 9, RGB(245, 200, 80));
+        ru(ix, iy, size, 1, 5, 14, 1, RGB(255, 225, 130));
+    } else if (!strcmp(name, "calc")) {
+        ru(ix, iy, size, 3, 1, 10, 14, RGB(70, 78, 104));
+        ru(ix, iy, size, 4, 2, 8, 3, RGB(140, 230, 170));
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++) ru(ix, iy, size, 4 + c * 3, 6 + r * 3, 2, 2, RGB(200, 208, 228));
+    } else if (!strcmp(name, "tasks")) {
+        ru(ix, iy, size, 1, 2, 14, 12, RGB(30, 36, 56));
+        ru(ix, iy, size, 3, 9, 2, 4, RGB(90, 210, 120)); ru(ix, iy, size, 6, 6, 2, 7, RGB(90, 210, 120));
+        ru(ix, iy, size, 9, 8, 2, 5, RGB(230, 190, 70)); ru(ix, iy, size, 12, 4, 2, 9, RGB(220, 90, 90));
+    } else if (!strcmp(name, "net")) {
+        for (int k = 0; k < 4; k++) ru(ix, iy, size, 2 + k * 3, 12 - (2 + k * 3), 2, 2 + k * 3, RGB(90, 210, 120));
+    } else if (!strcmp(name, "info")) {
+        int r = size / 2 - 1;
+        disc(ix + size / 2, iy + size / 2, r, 0, RGB(70, 130, 220));
+        ru(ix, iy, size, 7, 3, 2, 2, RGB(255, 255, 255));
+        ru(ix, iy, size, 7, 6, 2, 7, RGB(255, 255, 255));
+    } else if (!strcmp(name, "reboot")) {
+        int r = size / 2 - 1;
+        disc(ix + size / 2, iy + size / 2, r, r - size / 6 - 1, RGB(240, 170, 60));
+        ru(ix, iy, size, 9, 1, 5, 4, C_MENU_BG);
+        ru(ix, iy, size, 10, 1, 4, 1, RGB(240, 170, 60)); ru(ix, iy, size, 13, 1, 1, 4, RGB(240, 170, 60));
+    } else if (!strcmp(name, "power")) {
+        int r = size / 2 - 1;
+        disc(ix + size / 2, iy + size / 2, r, r - size / 6 - 1, RGB(230, 80, 80));
+        ru(ix, iy, size, 6, 0, 4, 8, C_MENU_BG);
+        ru(ix, iy, size, 7, 0, 2, 8, RGB(230, 80, 80));
+    } else if (!strcmp(name, "web")) {
+        int r = size / 2 - 1;
+        int cx = ix + size / 2, cy = iy + size / 2;
+        disc(cx, cy, r, 0, RGB(60, 130, 220));
+        disc(cx, cy, r, r - 1, RGB(200, 225, 255));
+        ru(ix, iy, size, 2, 8, 12, 1, RGB(200, 225, 255));
+        ru(ix, iy, size, 8, 1, 1, 14, RGB(200, 225, 255));
+        ru(ix, iy, size, 5, 4, 6, 1, RGB(200, 225, 255)); ru(ix, iy, size, 5, 12, 6, 1, RGB(200, 225, 255));
+    } else if (!strcmp(name, "image")) {
+        ru(ix, iy, size, 1, 2, 14, 12, RGB(240, 242, 248));
+        ru(ix, iy, size, 2, 3, 12, 10, RGB(110, 180, 240));
+        ru(ix, iy, size, 2, 9, 12, 4, RGB(90, 190, 110));
+        ru(ix, iy, size, 10, 4, 3, 3, RGB(255, 225, 100));
+    } else {
+        ru(ix, iy, size, 3, 2, 10, 12, RGB(120, 130, 160));
+    }
+}
+
+static int in_rect(int x, int y, int rx, int ry, int rw, int rh);
+
+/* Desktop icons: the first menu entries that are programs, in a column on the left */
+#define DESK_ICON 44
+#define DESK_STEP 92
+static int desk_sel = -1;
+static uint64_t desk_click_tick = 0;
+
+static int desk_count(void) {
+    int n = 0;
+    for (int i = 0; i < menu_count && n < 6; i++) if (menu[i].cmd[0] != '@' && menu[i].icon[0]) n++;
+    return n;
+}
+
+static int desk_menu_index(int k) {                   /* k-th desktop icon -> menu index */
+    int n = 0;
+    for (int i = 0; i < menu_count; i++) {
+        if (menu[i].cmd[0] == '@' || !menu[i].icon[0]) continue;
+        if (n++ == k) return i;
+    }
+    return -1;
+}
+
+static int desk_hit(int mx, int my) {
+    for (int k = 0; k < desk_count(); k++) {
+        int x = 16, y = 16 + k * DESK_STEP;
+        if (in_rect(mx, my, x, y, 84, 80)) return k;
+    }
+    return -1;
+}
+
+static void draw_desktop_icons(void) {
+    for (int k = 0; k < desk_count(); k++) {
+        int mi = desk_menu_index(k);
+        int x = 16, y = 16 + k * DESK_STEP;
+        if (k == desk_sel) { shade(x, y, 84, 80, 0); fill(x, y, 84, 80, RGB(30, 60, 110)); }
+        draw_icon(menu[mi].icon, x + (84 - DESK_ICON) / 2, y + 6, DESK_ICON);
+        int len = (int)strlen(menu[mi].label);
+        if (len > 10) len = 10;
+        char label[12];
+        memcpy(label, menu[mi].label, (size_t)len);
+        label[len] = '\0';
+        int tx = x + (84 - len * 8) / 2;
+        text16(tx + 1, y + 56 + 1, label, RGB(8, 10, 20));
+        text16(tx, y + 56, label, C_TEXT);
+    }
+}
+
 static void draw_window(int slot) {
     struct window *w = &wins[slot];
     int active = slot == focused;
     int ow = w->w + 2, oh = w->h + TITLE_H + 1;
     uint32_t tc = active ? C_TITLE_ON : C_TITLE_OFF;
 
+    /* soft drop shadow: three nested translucent layers */
+    shade(w->x + 3 - 6, w->y + 4 - 6, ow + 12, oh + 12, 22);
+    shade(w->x + 3 - 4, w->y + 4 - 4, ow + 8, oh + 8, 30);
+    shade(w->x + 3 - 2, w->y + 4 - 2, ow + 4, oh + 4, 44);
+
     fill(w->x, w->y, ow, oh, C_BORDER);
-    fill(w->x + 1, w->y + 1, ow - 2, TITLE_H - 1, tc);
+    for (int row = 0; row < TITLE_H - 1; row++) {                /* title bar with a light top gradient */
+        int lift = (TITLE_H - 1 - row) * 40 / TITLE_H;
+        uint32_t r = ((tc >> 16) & 255) + lift / 2, g = ((tc >> 8) & 255) + lift / 2, b = (tc & 255) + lift;
+        if (r > 255) r = 255;
+        if (g > 255) g = 255;
+        if (b > 255) b = 255;
+        fill(w->x + 1, w->y + 1 + row, ow - 2, 1, (r << 16) | (g << 8) | b);
+    }
     text16(w->x + 8, w->y + 3, w->title, C_TEXT);
 
     /* minimize and close buttons */
@@ -533,10 +694,37 @@ static void clock_text(char *date, char *tm) {
 
 /* Geometry of the taskbar buttons (one per window) */
 static int task_button_w(void) {
-    int avail = sw - START_X - START_W - 12 - 110;
+    int avail = sw - START_X - START_W - 12 - 150;
     int n = zcount ? zcount : 1;
     int bw = avail / n - 4;
     return bw > 160 ? 160 : bw;
+}
+
+/* Network status: 0 no card, 1 no cable, 2 waiting for an address, 3 online */
+#define NET_ICON_W 34
+static int net_state = -1;
+
+static int net_state_now(void) {
+    const struct netinfo *n = net_info();
+    if (!n->present) return 0;
+    if (!n->link) return 1;
+    return n->configured ? 3 : 2;
+}
+
+static void draw_net_icon(int x, int y) {
+    static const uint32_t cols[4] = { RGB(120, 124, 140), RGB(220, 70, 70), RGB(230, 190, 70), RGB(90, 210, 120) };
+    uint32_t c = cols[net_state < 0 ? 0 : net_state];
+    int lit = net_state == 3 ? 4 : net_state == 2 ? 2 : net_state == 1 ? 1 : 0;
+    for (int i = 0; i < 4; i++) {                       /* four ascending bars, like a signal meter */
+        int h = 5 + i * 4;
+        fill(x + i * 7, y + 20 - h, 5, h, i < lit ? c : RGB(52, 58, 80));
+    }
+    if (net_state == 0 || net_state == 1) {             /* a cross over the bars */
+        for (int k = 0; k < 18; k++) {
+            fill(x + 5 + k, y + 3 + k, 3, 2, RGB(220, 70, 70));
+            fill(x + 5 + k, y + 20 - k, 3, 2, RGB(220, 70, 70));
+        }
+    }
 }
 
 static void draw_taskbar(void) {
@@ -567,6 +755,9 @@ static void draw_taskbar(void) {
         bx += bw + 4;
     }
 
+    /* network icon */
+    draw_net_icon(sw - 90 - NET_ICON_W - 4, y + 6);
+
     /* clock */
     char date[12], tm[8];
     clock_text(date, tm);
@@ -582,7 +773,8 @@ static void draw_menu(void) {
     for (int i = 0; i < menu_count; i++) {
         int iy = y0 + 4 + i * MENU_ITEM_H;
         if (i == menu_hot) fill(START_X + 4, iy, MENU_W - 8, MENU_ITEM_H, C_MENU_HOT);
-        text16(START_X + 16, iy + (MENU_ITEM_H - 16) / 2, menu[i].label, C_TEXT);
+        if (menu[i].icon[0]) draw_icon(menu[i].icon, START_X + 10, iy + (MENU_ITEM_H - 18) / 2, 18);
+        text16(START_X + 38, iy + (MENU_ITEM_H - 16) / 2, menu[i].label, C_TEXT);
     }
 }
 
@@ -590,6 +782,7 @@ static void compose(void) {
     if (dx1 <= dx0) return;
     clip_x0 = dx0; clip_y0 = dy0; clip_x1 = dx1; clip_y1 = dy1;
     draw_wallpaper();
+    draw_desktop_icons();
     for (int i = 0; i < zcount; i++) {
         if (!wins[zorder[i]].minimized) draw_window(zorder[i]);
     }
@@ -656,13 +849,27 @@ static void mouse_press(int mx, int my) {
     }
 
     if (my >= sh - TASKBAR_H) {
-        if (in_rect(mx, my, START_X, sh - TASKBAR_H + 4, START_W, TASKBAR_H - 8)) set_menu(1);
+        if (in_rect(mx, my, sw - 90 - NET_ICON_W - 8, sh - TASKBAR_H, NET_ICON_W + 8, TASKBAR_H)) launch("/bin/rede");
+        else if (in_rect(mx, my, START_X, sh - TASKBAR_H + 4, START_W, TASKBAR_H - 8)) set_menu(1);
         else taskbar_click(mx);
         return;
     }
 
     int s = window_at(mx, my);
-    if (s < 0) return;
+    if (s < 0) {
+        int k = desk_hit(mx, my);
+        uint64_t t = timer_ticks();
+        if (k >= 0 && k == desk_sel && t - desk_click_tick < 50) {          /* double click */
+            desk_sel = -1;
+            launch(menu[desk_menu_index(k)].cmd);
+        } else {
+            desk_sel = k;
+            desk_click_tick = t;
+        }
+        damage(0, 0, 110, 16 + 6 * DESK_STEP);
+        return;
+    }
+    desk_sel = -1;
     struct window *w = &wins[s];
     focus_window(s);
 
@@ -747,6 +954,11 @@ static void update_clock(void) {
     uint64_t t = timer_ticks();
     if (clock_minute >= 0 && t - last_tick < 100) return;     /* once a second */
     last_tick = t;
+    int ns = net_state_now();
+    if (ns != net_state) {
+        net_state = ns;
+        damage(sw - 90 - NET_ICON_W - 8, sh - TASKBAR_H, NET_ICON_W + 8, TASKBAR_H);
+    }
     rtc_read(&now_time);
     if (now_time.minute != clock_minute) {
         clock_minute = now_time.minute;

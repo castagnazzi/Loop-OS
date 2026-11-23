@@ -432,7 +432,19 @@ static long sys_netinfo(uint64_t ubuf) {
     out.link = (uint8_t)n->link;
     out.configured = (uint8_t)n->configured;
     out.ip = n->ip; out.mask = n->mask; out.gw = n->gw; out.dns = n->dns;
+    memcpy(out.nic, n->nic, sizeof(out.nic));
     return copy_to_user(ubuf, &out, sizeof(out)) == 0 ? 0 : -SYS_EFAULT;
+}
+
+static long sys_keymap(uint64_t uname) {
+    if (uname) {
+        char name[16];
+        if (copy_str_from_user(name, uname, sizeof(name)) != 0) return -SYS_EFAULT;
+        if (!strcmp(name, "us")) keyboard_set_layout(0);
+        else if (!strcmp(name, "br") || !strcmp(name, "abnt2")) keyboard_set_layout(1);
+        else return -22;
+    }
+    return keyboard_get_layout();
 }
 
 static long sys_dns(uint64_t uname, uint64_t uip) {
@@ -501,6 +513,7 @@ void syscall_dispatch(struct syscall_frame *f) {
     case SYS_DNS:       ret = sys_dns(a1, a2); break;
     case SYS_PING:      ret = sys_ping(a1, a2); break;
     case SYS_TCP_CONNECT: ret = sys_tcp_connect(a1, a2); break;
+    case SYS_KEYMAP:    ret = sys_keymap(a1); break;
     case SYS_WALLTIME: {
         struct rtc_time t;
         rtc_read(&t);

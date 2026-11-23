@@ -1,9 +1,12 @@
-# Start menu: Label|command [argument]    (@poweroff shuts down, @reboot restarts)
-Terminal|/bin/term
-Bloco de Notas|/bin/notepad /tmp/nota.txt
-Arquivos|/bin/files /
-Calculadora|/bin/calc
-Gerenciador de Tarefas|/bin/taskmgr
-Sobre o Loop-OS|/bin/about
-Reiniciar|@reboot
-Desligar|@poweroff
+# Start menu: Label|command [argument]|icon    (@poweroff shuts down, @reboot restarts)
+Terminal|/bin/term|term
+Bloco de Notas|/bin/notepad /tmp/nota.txt|note
+Arquivos|/bin/files /|files
+Calculadora|/bin/calc|calc
+Imagens|/bin/files /usr/imagens|image
+Gerenciador de Tarefas|/bin/taskmgr|tasks
+Navegador|/bin/navegador|web
+Rede|/bin/rede|net
+Sobre o Loop-OS|/bin/about|info
+Reiniciar|@reboot|reboot
+Desligar|@poweroff|power

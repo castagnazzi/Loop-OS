@@ -245,6 +245,14 @@ static void open_item(int idx) {
         if (spawn(path, args) < 0) set_message("nao foi possivel executar", 1);
         return;
     }
+    size_t nl = strlen(it->name);
+    if (nl > 4 && (!strcmp(it->name + nl - 4, ".png") || !strcmp(it->name + nl - 4, ".bmp") ||
+                   !strcmp(it->name + nl - 4, ".lwp") || !strcmp(it->name + nl - 4, ".PNG") ||
+                   !strcmp(it->name + nl - 4, ".BMP"))) {
+        char *iargs[] = { "imagem", path, NULL };
+        if (spawn("/bin/imagem", iargs) < 0) set_message("nao foi possivel abrir", 1);
+        return;
+    }
     char *args[] = { "notepad", path, NULL };
     if (spawn("/bin/notepad", args) < 0) set_message("nao foi possivel abrir", 1);
 }

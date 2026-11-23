@@ -48,6 +48,7 @@
 #define SYS_DNS         118  /* dns(name, uint32_t *ip) -> 0 or < 0 */
 #define SYS_PING        119  /* ping(ip, timeout_ms) -> round trip ms or < 0 */
 #define SYS_TCP_CONNECT 120  /* tcp_connect(ip, port) -> fd (read/write/close like a file) */
+#define SYS_KEYMAP      121  /* keymap(name or NULL) -> layout (0 us, 1 br); a name sets it */
 #define SYS_WALLTIME    115  /* walltime() -> hour*3600 + minute*60 + second */
 
 /* errno values used by the kernel */
@@ -94,6 +95,7 @@ struct sys_netinfo {
     uint8_t mac[6];
     uint8_t present, link, configured, pad;
     uint32_t ip, mask, gw, dns;     /* host order: a.b.c.d = a<<24 | b<<16 | c<<8 | d */
+    char nic[16];                   /* driver name */
 };
 
 struct sys_taskinfo {

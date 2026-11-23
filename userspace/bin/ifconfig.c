@@ -13,7 +13,7 @@ int main(void) {
         puts("no network card found");
         return 1;
     }
-    printf("eth0: link %s\n", n.link ? "up" : "down");
+    printf("eth0 (%s): link %s\n", n.nic, n.link ? "up" : "down");
     printf("  mac      %02x:%02x:%02x:%02x:%02x:%02x\n", n.mac[0], n.mac[1], n.mac[2], n.mac[3], n.mac[4], n.mac[5]);
     if (!n.configured) {
         puts("  not configured yet (waiting for DHCP)");

@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-#define WIN_EV_KEY   1    /* a = ASCII code */
+#define WIN_EV_KEY   1    /* a = ASCII code; arrows 0x11 up, 0x12 down, 0x13 left, 0x14 right; 0x15 PgUp, 0x16 PgDn */
 #define WIN_EV_MOUSE 2    /* a = x, b = y (inside the window), c = button mask (1 = left) */
 #define WIN_EV_CLOSE 3    /* the user pressed the close button */
 

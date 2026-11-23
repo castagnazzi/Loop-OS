@@ -46,7 +46,7 @@ static void put(char c) {
     case '\t': do { put(' '); } while (cx & 7); return;
     default: break;
     }
-    if (c < 32 || c > 126) return;
+    if ((unsigned char)c < 32 || (unsigned char)c == 127) return;
     if (cx >= COLS) newline();
     grid[cy][cx++] = c;
 }

@@ -52,6 +52,7 @@ int sysinfo(struct sys_sysinfo *info);
 int netinfo(struct sys_netinfo *info);
 int dns_resolve(const char *name, uint32_t *ip);         /* 0 or < 0; dotted quads work too */
 int ping_ip(uint32_t ip, int timeout_ms);                /* round trip in ms, < 0 on timeout */
+int keymap(const char *name);                          /* NULL: current layout (0 us, 1 br); "us"/"br" sets */
 int tcp_connect(uint32_t ip, int port);                  /* fd (read/write/close), or < 0 */
 int taskinfo(int index, struct sys_taskinfo *info);
 

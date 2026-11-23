@@ -61,7 +61,9 @@ static uint16_t eeprom_word(int addr) {
     return 0;
 }
 
-int e1000_init(uint8_t mac[6]) {
+static int e1000_link_up(void);
+
+static int e1000_init(uint8_t mac[6]) {
     const struct pci_dev *nic = NULL;
     for (int i = 0; i < pci_count() && !nic; i++) {
         const struct pci_dev *d = pci_get(i);
@@ -78,14 +80,8 @@ int e1000_init(uint8_t mac[6]) {
     uint64_t phys = bar0 & ~0xFULL;
 
     /* Map the 128 KB register window uncached */
-    static uint64_t window = 0xFFFFFE0100000000ULL;
-    uint64_t va = window;
-    for (int p = 0; p < 32; p++) {
-        if (vmm_map((void *)(va + p * 4096ULL), (void *)(phys + p * 4096ULL), 1,
-                    VMM_FLAG_PRESENT | VMM_FLAG_WRITE | VMM_FLAG_NOCACHE | VMM_FLAG_NX) != 0) return -1;
-    }
-    window += 32 * 4096ULL;
-    mmio = (volatile uint8_t *)va;
+    mmio = pci_map_mmio(phys, 32);
+    if (!mmio) return -1;
 
     /* Reset, no interrupts (we poll) */
     wr(REG_IMC, 0xFFFFFFFF);
@@ -157,11 +153,11 @@ int e1000_init(uint8_t mac[6]) {
     return 0;
 }
 
-int e1000_link_up(void) {
+static int e1000_link_up(void) {
     return mmio && (rd(REG_STATUS) & 2);
 }
 
-int e1000_send(const void *frame, size_t len) {
+static int e1000_send(const void *frame, size_t len) {
     if (!mmio || len == 0 || len > 1514) return -1;
     struct tx_desc *d = &tx_ring[tx_cur];
     for (int i = 0; i < 1000000 && !(d->status & 1); i++) {}
@@ -180,7 +176,7 @@ int e1000_send(const void *frame, size_t len) {
     return 0;
 }
 
-void e1000_poll(void (*handler)(const uint8_t *frame, size_t len)) {
+static void e1000_poll(void (*handler)(const uint8_t *frame, size_t len)) {
     if (!mmio) return;
     for (;;) {
         struct rx_desc *d = &rx_ring[rx_cur];
@@ -193,3 +189,5 @@ void e1000_poll(void (*handler)(const uint8_t *frame, size_t len)) {
         rx_cur = (rx_cur + 1) % RX_COUNT;
     }
 }
+
+const struct nic_driver e1000_driver = { "e1000", e1000_init, e1000_send, e1000_poll, e1000_link_up };

@@ -56,6 +56,77 @@ static const char scancode_to_ascii_shift[128] = {
     '2', '3', '0', '.', 0, 0, 0, 0
 };
 
+/* ---- ABNT2 (Brazilian) layout ---------------------------------------
+ * Entries with the DEAD bit are dead keys: the accent waits for the next letter. Output is Latin-1. */
+#define DEAD 0x100
+static const uint16_t abnt2_norm[128] = {
+    0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', '\t',
+    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', DEAD | 0xB4, '[', '\n', 0, 'a', 's',
+    'd', 'f', 'g', 'h', 'j', 'k', 'l', 0xE7, DEAD | '~', '\'', 0, ']', 'z', 'x', 'c', 'v',
+    'b', 'n', 'm', ',', '.', ';', 0, '*', 0, ' ', 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, '7', '8', '9', '-', '4', '5', '6', '+', '1',
+    '2', '3', '0', '.', 0, 0, '\\', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, '/', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+static const uint16_t abnt2_shift[128] = {
+    0, 27, '!', '@', '#', '$', '%', DEAD | 0xA8, '&', '*', '(', ')', '_', '+', '\b', '\t',
+    'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', DEAD | '`', '{', '\n', 0, 'A', 'S',
+    'D', 'F', 'G', 'H', 'J', 'K', 'L', 0xC7, DEAD | '^', '"', 0, '}', 'Z', 'X', 'C', 'V',
+    'B', 'N', 'M', '<', '>', ':', 0, '*', 0, ' ', 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, '7', '8', '9', '-', '4', '5', '6', '+', '1',
+    '2', '3', '0', '.', 0, 0, '|', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, '?', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/* AltGr: a few symbols */
+static uint16_t abnt2_altgr(uint8_t code) {
+    switch (code) {
+    case 0x10: return '/';   case 0x11: return '?';
+    case 0x02: return 0xB9;  case 0x03: return 0xB2;  case 0x04: return 0xB3;
+    case 0x05: return 0xA3;  case 0x06: return 0xAC;  case 0x2E: return 0xA2;
+    case 0x0D: return 0xA7;  case 0x1B: return 0xAA;  case 0x2B: return 0xBA;
+    }
+    return 0;
+}
+
+static int kbd_layout = 1;          /* 0 = US, 1 = ABNT2 */
+static int altgr = 0;
+static uint8_t dead = 0;            /* pending accent character, 0 if none */
+
+void keyboard_set_layout(int layout) { kbd_layout = layout ? 1 : 0; dead = 0; }
+int keyboard_get_layout(void) { return kbd_layout; }
+
+/* Accent + letter -> Latin-1 letter, or 0 when they do not combine */
+static uint8_t compose_accent(uint8_t accent, uint8_t c) {
+    static const char vowels[] = "aeiouAEIOU";
+    static const uint8_t acute[] = { 0xE1, 0xE9, 0xED, 0xF3, 0xFA, 0xC1, 0xC9, 0xCD, 0xD3, 0xDA };
+    static const uint8_t grave[] = { 0xE0, 0xE8, 0xEC, 0xF2, 0xF9, 0xC0, 0xC8, 0xCC, 0xD2, 0xD9 };
+    static const uint8_t circ[]  = { 0xE2, 0xEA, 0xEE, 0xF4, 0xFB, 0xC2, 0xCA, 0xCE, 0xD4, 0xDB };
+    static const uint8_t diae[]  = { 0xE4, 0xEB, 0xEF, 0xF6, 0xFC, 0xC4, 0xCB, 0xCF, 0xD6, 0xDC };
+    const uint8_t *tab = 0;
+    switch (accent) {
+    case 0xB4: tab = acute; break;
+    case '`':  tab = grave; break;
+    case '^':  tab = circ; break;
+    case 0xA8: tab = diae; break;
+    case '~':
+        if (c == 'a') return 0xE3;
+        if (c == 'o') return 0xF5;
+        if (c == 'n') return 0xF1;
+        if (c == 'A') return 0xC3;
+        if (c == 'O') return 0xD5;
+        if (c == 'N') return 0xD1;
+        return 0;
+    }
+    if (!tab) return 0;
+    if (accent == 0xB4 && c == 'c') return 0xE7;       /* acute + c = c-cedilla, as on the real layout */
+    if (accent == 0xB4 && c == 'C') return 0xC7;
+    for (int i = 0; vowels[i]; i++) if (vowels[i] == (char)c) return tab[i];
+    return 0;
+}
+
 /* Extended scancodes (E0 prefix) */
 static const uint8_t extended_scancodes[] = {
     0x1C,  /* Enter (keypad) */
@@ -198,6 +269,22 @@ void keyboard_init(void) {
     kprintf("Keyboard: initialized\n");
 }
 
+/* Navigation keys reach programs as these control codes (they have no ASCII value) */
+#define KEY_UP    0x11
+#define KEY_DOWN  0x12
+#define KEY_LEFT  0x13
+#define KEY_RIGHT 0x14
+#define KEY_PGUP  0x15
+#define KEY_PGDN  0x16
+
+static void kbd_push(uint8_t c) {
+    size_t next = (kbd_head + 1) % KBD_BUFFER_SIZE;
+    if (next != kbd_tail) {
+        kbd_buffer[kbd_head] = c;
+        kbd_head = next;
+    }
+}
+
 /* Process scancode */
 static void process_scancode(uint8_t scancode) {
     static int extended = 0;
@@ -237,21 +324,49 @@ static void process_scancode(uint8_t scancode) {
         extended = 0;
         switch (code) {
             case 0x1D: kbd_state.ctrl = !released; break;      /* Right Ctrl */
-            case 0x38: kbd_state.alt = !released; break;       /* Right Alt */
+            case 0x38: altgr = !released; break;               /* Right Alt = AltGr */
+            case 0x35: if (!released) kbd_push('/'); break;    /* keypad / */
             case 0x47: /* Home */ break;
-            case 0x48: /* Up */ break;
-            case 0x49: /* Page Up */ break;
-            case 0x4B: /* Left */ break;
-            case 0x4D: /* Right */ break;
+            case 0x48: if (!released) kbd_push(KEY_UP); break;
+            case 0x49: if (!released) kbd_push(KEY_PGUP); break;
+            case 0x4B: if (!released) kbd_push(KEY_LEFT); break;
+            case 0x4D: if (!released) kbd_push(KEY_RIGHT); break;
             case 0x4F: /* End */ break;
-            case 0x50: /* Down */ break;
-            case 0x51: /* Page Down */ break;
+            case 0x50: if (!released) kbd_push(KEY_DOWN); break;
+            case 0x51: if (!released) kbd_push(KEY_PGDN); break;
             case 0x52: /* Insert */ break;
             case 0x53: /* Delete */ break;
         }
         return;
     }
     
+    /* ABNT2: tables, AltGr and dead keys */
+    if (!released && code < 128 && kbd_layout == 1) {
+        uint16_t e;
+        if (altgr) e = abnt2_altgr(code);
+        else e = kbd_state.shift ? abnt2_shift[code] : abnt2_norm[code];
+        if (!altgr && !kbd_state.shift && kbd_state.caps && ((e >= 'a' && e <= 'z') || e == 0xE7)) e -= 32;
+        else if (!altgr && kbd_state.shift && kbd_state.caps && ((e >= 'A' && e <= 'Z') || e == 0xC7)) e += 32;
+        if (!e) return;
+        if (e & DEAD) {
+            uint8_t acc = (uint8_t)e;
+            if (dead == acc) { kbd_push(acc); dead = 0; }       /* the same accent twice types it */
+            else { if (dead) kbd_push(dead); dead = acc; }
+            return;
+        }
+        uint8_t c = (uint8_t)e;
+        if (dead) {
+            uint8_t acc = dead;
+            dead = 0;
+            if (c == ' ') { kbd_push(acc); return; }            /* accent + space = the accent */
+            uint8_t m = compose_accent(acc, c);
+            if (m) { kbd_push(m); return; }
+            kbd_push(acc);                                      /* no combination: both characters */
+        }
+        kbd_push(c);
+        return;
+    }
+
     /* Convert to ASCII on key press */
     if (!released && code < 128) {
         char c = 0;

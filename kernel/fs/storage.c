@@ -54,6 +54,7 @@ static void write_report(void) {
 
 void storage_init(void) {
     ata_init();
+    ahci_init();
 
     int disks = blk_count();
     for (int i = 0; i < disks; i++) part_scan(blk_get(i));

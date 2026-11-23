@@ -34,6 +34,7 @@ int blk_read(struct blkdev *dev, uint64_t lba, uint32_t count, void *buf);
 
 /* Hardware drivers and discovery */
 void ata_init(void);                    /* register the IDE/ATA disks */
+void ahci_init(void);                   /* register the SATA (AHCI) disks */
 void part_scan(struct blkdev *disk);    /* register the partitions of a disk */
 void storage_init(void);                /* all of the above plus mounting */
 

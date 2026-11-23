@@ -2,6 +2,7 @@
 
 #include <kernel/pci.h>
 #include <kernel/stdio.h>
+#include <kernel/mm/vmm.h>
 #include <stdint.h>
 
 static inline void outl(uint16_t p, uint32_t v) { asm volatile("outl %0, %1" : : "a"(v), "Nd"(p)); }
@@ -36,9 +37,37 @@ void pci_write16(const struct pci_dev *d, uint8_t off, uint16_t v) {
 
 void pci_enable(const struct pci_dev *d) {
     uint16_t cmd = pci_read16(d, 0x04);
-    cmd |= 0x0006;                 /* memory space + bus master */
+    cmd |= 0x0007;                 /* I/O space + memory space + bus master */
     cmd &= (uint16_t)~0x0400;      /* interrupts not disabled */
     pci_write16(d, 0x04, cmd);
+}
+
+uint64_t pci_bar(const struct pci_dev *d, int idx, int *is_io) {
+    uint32_t v = pci_read32(d, (uint8_t)(0x10 + idx * 4));
+    if (is_io) *is_io = v & 1;
+    if (v == 0) return 0;
+    if (v & 1) return v & ~3u;
+    uint64_t base = v & ~0xFULL;
+    if (((v >> 1) & 3) == 2 && idx < 5) base |= (uint64_t)pci_read32(d, (uint8_t)(0x14 + idx * 4)) << 32;
+    return base;
+}
+
+void *pci_map_mmio(uint64_t phys, int pages) {
+    static uint64_t window = 0xFFFFFE0100000000ULL;
+    uint64_t base = phys & ~0xFFFULL, off = phys & 0xFFF;
+    uint64_t va = window;
+    for (int p = 0; p < pages; p++) {
+        if (vmm_map((void *)(va + p * 4096ULL), (void *)(base + p * 4096ULL), 1,
+                    VMM_FLAG_PRESENT | VMM_FLAG_WRITE | VMM_FLAG_NOCACHE | VMM_FLAG_NX) != 0) return NULL;
+    }
+    window += (uint64_t)pages * 4096ULL;
+    return (void *)(va + off);
+}
+
+const struct pci_dev *pci_find(uint16_t vendor, uint16_t device) {
+    for (int i = 0; i < ndevs; i++)
+        if (devs[i].vendor == vendor && devs[i].device == device) return &devs[i];
+    return NULL;
 }
 
 static void scan_function(uint8_t bus, uint8_t dev, uint8_t fn) {

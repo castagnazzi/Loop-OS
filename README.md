@@ -136,11 +136,12 @@ loop-os/
 |------|----------|
 | 0 - Toolchain e build | Pronta: `make toolchain`, `make`, `make iso`, `make run` |
 | 1 - Kernel core | Pronta: GDT/IDT, PIC, PMM, VMM, heap (`kmalloc`/`kfree`), timer, teclado, mouse, framebuffer + console. 69 testes de memória rodam no boot |
-| 2 - Drivers e FS | Parcial: ramfs gravavel (arquivos, pastas, `mkdir`/`rm`/`cp`), disco ATA, particoes MBR/GPT e leitura de FAT32, NTFS e ext2/3/4 montados em `/mnt/<disco>`. Faltam PCI, AHCI/NVMe, escrita nos discos, rede |
+| 2 - Drivers e FS | Parcial: ramfs gravavel (arquivos, pastas, `mkdir`/`rm`/`cp`), PCI, discos ATA e SATA (AHCI), particoes MBR/GPT e leitura de FAT32, NTFS e ext2/3/4 montados em `/mnt/<disco>`. Faltam NVMe, USB e escrita nos discos |
 | 3 - Userspace básico | Funcionando em ring 3: SYSCALL/SYSRET, processos, `fork`/`execve`/`spawn`, pipes, ELF, scheduler preemptivo, `init` e `sh` (com `|`, `<`, `>`, `>>`, `&`) |
-| 4 - Desktop | Funcionando: compositor no kernel, janelas arrastaveis, barra de tarefas com relogio (RTC), menu Iniciar (`/etc/menu`), libgui e apps: terminal, bloco de notas, arquivos, calculadora, gerenciador de tarefas |
-| Rede | Funcionando: PCI, placa Intel e1000, DHCP, ARP, ICMP, UDP, DNS e TCP (cliente). Apps `ping`, `wget` (HTTP), `ifconfig`, `nslookup`. Faltam TLS/HTTPS, SMB, outras placas (Realtek, Wi-Fi) |
-| 5 a 7 | Não iniciadas (audio, navegador, apps maiores) |
+| 4 - Desktop | Funcionando: compositor no kernel com sombras nas janelas, icones na area de trabalho e no menu, barra de tarefas com relogio (RTC) e icone de rede, menu Iniciar (`/etc/menu`), libgui e apps: terminal, bloco de notas (com abas), arquivos, calculadora, gerenciador de tarefas, visualizador de imagens (PNG/BMP), navegador HTML simples (HTTP e arquivos locais, sem JavaScript/CSS/imagens), status da rede |
+| Rede | Funcionando: PCI, placas Intel e1000, Realtek RTL8139, virtio-net e Realtek RTL8168/8169 (esta ultima ainda sem teste em hardware real), DHCP, ARP, ICMP, UDP, DNS e TCP (cliente). Apps `ping`, `wget` (HTTP), `ifconfig`, `nslookup`, `rede`. Faltam TLS/HTTPS, SMB, Wi-Fi |
+| Teclado | Layout ABNT2 (padrao) com teclas mortas (acento + letra, ç) e AltGr; `teclado us` troca para o layout americano; setas e PgUp/PgDn chegam aos programas |
+| 5 a 7 | Não iniciadas (audio, USB, TLS/HTTPS, JavaScript, apps maiores) |
 
 ### Como rodar
 
@@ -154,7 +155,7 @@ qemu-system-x86_64 -cdrom build/loop-os.iso -m 256 -serial stdio
 Com framebuffer, o kernel abre o desktop e lanca o Terminal (que roda `/bin/sh`).
 Programas em `/bin`: `ls cat cp mkdir rm wc hello ps kill sleep spin crash` e os
 apps graficos `term notepad files calc taskmgr`. Os itens do menu Iniciar ficam em
-`rootfs/etc/menu` (`Rotulo|comando`). Para testar a rede no QEMU: `-netdev user,id=n0 -device e1000,netdev=n0` (o host aparece como 10.0.2.2). O app Arquivos tem arvore de pastas e lista com tamanhos. O menu tem "Sobre o Loop-OS" (assinatura e dados do sistema), Reiniciar e Desligar. O desktop abre vazio, sem terminal. O papel de parede vem de `/etc/wallpaper.lwp` (gere outro com `python tools/gen_wallpaper.py imagem.png 300`; a imagem original do mascote esta em `assets/mascote.png`). Os arquivos que vem com o sistema (`/bin`, `/etc`...) sao protegidos contra apagar e sobrescrever; `/tmp` e arquivos novos sao livres. O relogio mostra a hora do RTC: use
+`rootfs/etc/menu` (`Rotulo|comando`). Para testar a rede no QEMU: `-netdev user,id=n0 -device e1000,netdev=n0` (o host aparece como 10.0.2.2); tambem funcionam `-device rtl8139,netdev=n0` e `-device virtio-net-pci,netdev=n0`. No Windows, `testar-rede.bat` roda o QEMU da pasta `emulador`. Paginas HTML de exemplo em `/usr/www`; para ver um servidor do seu PC, rode `python -m http.server 8000` e abra `http://10.0.2.2:8000/` no Navegador. Imagens de exemplo em `/usr/imagens`. O app Arquivos tem arvore de pastas e lista com tamanhos. O menu tem "Sobre o Loop-OS" (assinatura e dados do sistema), Reiniciar e Desligar. O desktop abre vazio, sem terminal. O papel de parede vem de `/etc/wallpaper.lwp` (gere outro com `python tools/gen_wallpaper.py imagem.png 300`; a imagem original do mascote esta em `assets/mascote.png`). Os arquivos que vem com o sistema (`/bin`, `/etc`...) sao protegidos contra apagar e sobrescrever; `/tmp` e arquivos novos sao livres. O relogio mostra a hora do RTC: use
 `-rtc base=localtime` no QEMU para a hora local.
 
 O código do userspace está em `userspace/` (ulib + programas). O scaffold antigo,

@@ -16,6 +16,7 @@ struct netinfo {
     int present;          /* a network card was found */
     int link;             /* cable/link is up */
     int configured;       /* DHCP gave us an address */
+    char nic[16];         /* driver name (e1000, rtl8139...) */
 };
 
 void net_init(void);

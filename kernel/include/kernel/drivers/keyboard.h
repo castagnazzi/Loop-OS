@@ -14,6 +14,10 @@ void keyboard_handler(void *frame);
 /* Get key from buffer (non-blocking) */
 int keyboard_getchar(void);
 
+/* Layout: 0 = US, 1 = ABNT2 (default) */
+void keyboard_set_layout(int layout);
+int keyboard_get_layout(void);
+
 /* Check if key available */
 int keyboard_has_key(void);
 

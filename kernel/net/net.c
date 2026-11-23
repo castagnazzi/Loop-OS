@@ -62,7 +62,7 @@ static int eth_send(const uint8_t *dst, uint16_t type, const uint8_t *payload, s
     memcpy(frame + 6, ni.mac, 6);
     put16(frame + 12, type);
     memcpy(frame + 14, payload, len);
-    return e1000_send(frame, 14 + len);
+    return nic_send(frame, 14 + len);
 }
 
 /* ---------------------------------------------------------------- */
@@ -628,9 +628,9 @@ void net_poll(void) {
     static int busy = 0;               /* handlers may wait (ARP): never poll inside a poll */
     if (!ni.present || busy) return;
     busy = 1;
-    e1000_poll(frame_rx);
+    nic_poll(frame_rx);
     dhcp_tick();
-    ni.link = e1000_link_up();
+    ni.link = nic_link_up();
     busy = 0;
 }
 
@@ -639,11 +639,12 @@ const struct netinfo *net_info(void) { return &ni; }
 void net_init(void) {
     memset(&ni, 0, sizeof(ni));
     pci_init();
-    if (e1000_init(ni.mac) != 0) {
+    if (nic_init(ni.mac) != 0) {
         kprintf("net: no supported network card\n");
         return;
     }
     ni.present = 1;
-    ni.link = e1000_link_up();
+    ni.link = nic_link_up();
+    strncpy(ni.nic, nic_name(), sizeof(ni.nic) - 1);
     dhcp_tick();
 }
