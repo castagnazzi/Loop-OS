@@ -54,6 +54,7 @@ int unlink(const char *path) { return (int)sys1(SYS_UNLINK, (long)path); }
 int netinfo(struct sys_netinfo *info) { return (int)sys1(SYS_NETINFO, (long)info); }
 int dns_resolve(const char *name, uint32_t *ip) { return (int)sys2(SYS_DNS, (long)name, (long)ip); }
 int ping_ip(uint32_t ip, int timeout_ms) { return (int)sys2(SYS_PING, (long)ip, timeout_ms); }
+long unixtime(void) { return sys3(SYS_UNIXTIME, 0, 0, 0); }
 int keymap(const char *name) { return (int)sys1(SYS_KEYMAP, (long)name); }
 int tcp_connect(uint32_t ip, int port) { return (int)sys2(SYS_TCP_CONNECT, (long)ip, port); }
 int sysinfo(struct sys_sysinfo *info) { return (int)sys1(SYS_SYSINFO, (long)info); }

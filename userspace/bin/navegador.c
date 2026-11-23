@@ -2,11 +2,12 @@
  *
  * Shows HTML pages from http:// servers and from local files. It understands headings,
  * paragraphs, lists, links, bold text, <pre>, <hr> and the common entities. It does NOT run
- * JavaScript, apply CSS or load images, and has no HTTPS (no TLS yet).
+ * JavaScript, apply CSS or load images. https:// works (TLS 1.2, certificates are checked).
  *
  * usage: navegador [url]      keys: Up/Down/PgUp/PgDn scroll, Enter in the address bar to go. */
 
 #include <gui.h>
+#include <tls.h>
 
 #define W 820
 #define H 580
@@ -81,13 +82,15 @@ static const char *find_ci(const char *h, const char *needle, const char *end) {
 /* ------------------------------------------------------------------ */
 /* Fetching */
 static int split_url(const char *u, char *host, int hs, int *port, const char **path) {
-    if (strncmp(u, "http://", 7)) return -1;
-    u += 7;
+    int port_default = 80;
+    if (!strncmp(u, "https://", 8)) { u += 8; port_default = 443; }
+    else if (!strncmp(u, "http://", 7)) u += 7;
+    else return -1;
     int n = 0;
     while (u[n] && u[n] != '/' && u[n] != ':' && n < hs - 1) { host[n] = u[n]; n++; }
     host[n] = '\0';
     const char *r = u + n;
-    *port = 80;
+    *port = port_default;
     if (*r == ':') { *port = atoi(r + 1); while (*r && *r != '/') r++; }
     *path = *r ? r : "/";
     return 0;
@@ -99,10 +102,11 @@ static void resolve(const char *base, const char *href, char *out, int cap) {
         snprintf(out, (size_t)cap, "%s", href);
         return;
     }
-    int is_http = !strncmp(base, "http://", 7);
+    int scheme = !strncmp(base, "https://", 8) ? 8 : !strncmp(base, "http://", 7) ? 7 : 0;
+    int is_http = scheme != 0;
     int origin_len = 0;
     if (is_http) {
-        const char *p = base + 7;
+        const char *p = base + scheme;
         while (*p && *p != '/') p++;
         origin_len = (int)(p - base);
     }
@@ -115,7 +119,7 @@ static void resolve(const char *base, const char *href, char *out, int cap) {
     char dir[256];
     snprintf(dir, sizeof(dir), "%s", base);
     char *slash = strrchr(dir, '/');
-    if (is_http && slash < dir + 7) {            /* "http://host" without a path */
+    if (is_http && slash < dir + scheme) {       /* "http://host" without a path */
         snprintf(out, (size_t)cap, "%s/%s", dir, href);
         return;
     }
@@ -147,11 +151,8 @@ static int dechunk(char *buf, long len) {
 static int fetch(char *u, int depth) {
     plen = 0;
     if (depth > 5) { snprintf(status_msg, sizeof(status_msg), "redirecionamentos demais"); return -1; }
-    if (!strncmp(u, "https://", 8)) {
-        snprintf(status_msg, sizeof(status_msg), "HTTPS ainda nao e suportado (sem TLS)");
-        return -1;
-    }
-    if (strncmp(u, "http://", 7)) {                       /* local file */
+    int secure = !strncmp(u, "https://", 8);
+    if (strncmp(u, "http://", 7) && !secure) {                       /* local file */
         const char *path = !strncmp(u, "file://", 7) ? u + 7 : u;
         int fd = open(path, O_RDONLY);
         if (fd < 0) { snprintf(status_msg, sizeof(status_msg), "arquivo nao encontrado: %s", path); return -1; }
@@ -168,16 +169,25 @@ static int fetch(char *u, int depth) {
     split_url(u, host, sizeof(host), &port, &path);
     uint32_t ip;
     if (dns_resolve(host, &ip) < 0) { snprintf(status_msg, sizeof(status_msg), "nao foi possivel resolver %s", host); return -1; }
-    int s = tcp_connect(ip, port);
-    if (s < 0) { snprintf(status_msg, sizeof(status_msg), "falha ao conectar em %s:%d", host, port); return -1; }
+    int s = -1;
+    if (secure) {
+        if (tls_open(ip, port, host) < 0) { snprintf(status_msg, sizeof(status_msg), "HTTPS: %s", tls_error()); return -1; }
+    } else {
+        s = tcp_connect(ip, port);
+        if (s < 0) { snprintf(status_msg, sizeof(status_msg), "falha ao conectar em %s:%d", host, port); return -1; }
+    }
     char req[640];
     int rl = snprintf(req, sizeof(req),
                       "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: Mozilla/5.0 (Loop-OS) navegador\r\nAccept: text/html,*/*\r\nConnection: close\r\n\r\n",
                       path, host);
-    if (write(s, req, (size_t)rl) < 0) { close(s); snprintf(status_msg, sizeof(status_msg), "falha ao enviar"); return -1; }
+    if ((secure ? tls_write(req, (size_t)rl) : write(s, req, (size_t)rl)) < 0) {
+        if (secure) tls_close(); else close(s);
+        snprintf(status_msg, sizeof(status_msg), "falha ao enviar");
+        return -1;
+    }
     long n;
-    while (plen < PAGE_MAX && (n = read(s, page + plen, 2048)) > 0) plen += n;
-    close(s);
+    while (plen < PAGE_MAX && (n = secure ? tls_read(page + plen, 2048) : read(s, page + plen, 2048)) > 0) plen += n;
+    if (secure) tls_close(); else close(s);
     page[plen] = '\0';
 
     char *body = NULL;
@@ -554,7 +564,7 @@ static void render(struct gwin *g) {
 }
 
 static void show_error_page(void) {
-    snprintf(page, PAGE_MAX, "<h2>Nao foi possivel abrir a pagina</h2><p>%s</p><p>Enderecos aceitos: http://servidor/caminho e arquivos locais como /usr/www/index.html</p>", status_msg);
+    snprintf(page, PAGE_MAX, "<h2>Nao foi possivel abrir a pagina</h2><p>%s</p><p>Enderecos aceitos: http://, https:// e arquivos locais como /usr/www/index.html</p>", status_msg);
     plen = (long)strlen(page);
 }
 
@@ -579,7 +589,7 @@ static void go_address(struct gwin *g) {
     if (!strncmp(t, "http", 4) || t[0] == '/' || !strncmp(t, "file:", 5)) navigate(g, t, 1);
     else {
         char u[270];
-        snprintf(u, sizeof(u), "http://%s", t);
+        snprintf(u, sizeof(u), strncmp(t, "https://", 8) ? "http://%s" : "%s", t);
         navigate(g, u, 1);
     }
 }

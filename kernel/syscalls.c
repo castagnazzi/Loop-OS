@@ -520,6 +520,19 @@ void syscall_dispatch(struct syscall_frame *f) {
         ret = t.hour * 3600 + t.minute * 60 + t.second;
         break;
     }
+    case SYS_UNIXTIME: {
+        struct rtc_time t;
+        rtc_read(&t);
+        long y = t.year, m = t.month, d = t.day;
+        y -= m <= 2;                                   /* days from civil (Howard Hinnant) */
+        long era = (y >= 0 ? y : y - 399) / 400;
+        long yoe = y - era * 400;
+        long doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+        long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        long days = era * 146097 + doe - 719468;
+        ret = days * 86400 + t.hour * 3600 + t.minute * 60 + t.second;
+        break;
+    }
     case SYS_PIPE:      ret = sys_pipe(a1); break;
     case SYS_DUP2:      ret = sys_dup2((int)a1, (int)a2); break;
     case SYS_FORK:      ret = task_fork(f); break;

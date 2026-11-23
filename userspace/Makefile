@@ -29,7 +29,16 @@ BINS     := $(addprefix $(BUILD)/bin/,$(PROGS))
 LIB      := $(BUILD)/libulib.a
 CRT0     := $(BUILD)/crt0.o
 
--include $(wildcard $(BUILD)/*.d $(BUILD)/obj/*.d)
+# TLS (BearSSL, vendored in tls/bearssl) is linked only into the programs that need it.
+TLS_PROGS := wget navegador
+TLS_BINS  := $(addprefix $(BUILD)/bin/,$(TLS_PROGS))
+TLS_SRCS  := $(shell find tls/bearssl/src -name '*.c')
+TLS_OBJS  := $(patsubst tls/bearssl/src/%.c,$(BUILD)/tls/%.o,$(TLS_SRCS)) $(BUILD)/tls/tls.o
+TLSLIB    := $(BUILD)/libtls.a
+# Soft-float/SSE-free build: no AES-NI/SSE2/RDRAND intrinsics and no OS entropy or clock sources
+TLS_FLAGS := -w -Itls/shim -Itls/bearssl/src -Itls/bearssl/inc              -DBR_AES_X86NI=0 -DBR_SSE2=0 -DBR_RDRAND=0 -DBR_POWER8=0
+
+-include $(wildcard $(BUILD)/*.d $(BUILD)/obj/*.d $(BUILD)/tls/*.d)
 
 .PHONY: all install clean
 all: $(BINS)
@@ -56,6 +65,21 @@ $(BUILD)/obj/%.o: bin/%.c include/ulib.h include/gui.h
 $(BUILD)/bin/%: $(BUILD)/obj/%.o $(CRT0) $(LIB) user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(LDFLAGS) -o $@ $(CRT0) $< $(LIB)
+
+$(BUILD)/tls/tls.o: tls/tls.c tls/anchors.inc include/tls.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itls/shim -c $< -o $@
+
+$(BUILD)/tls/%.o: tls/bearssl/src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(TLS_FLAGS) -c $< -o $@
+
+$(TLSLIB): $(TLS_OBJS)
+	$(AR) rcs $@ $^
+
+$(TLS_BINS): $(BUILD)/bin/%: $(BUILD)/obj/%.o $(CRT0) $(LIB) $(TLSLIB) user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $< $(TLSLIB) $(LIB)
 
 install: all
 	@mkdir -p $(ROOTFS)/bin $(ROOTFS)/sbin

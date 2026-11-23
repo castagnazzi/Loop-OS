@@ -1,9 +1,16 @@
-/* wget: fetch a page over plain HTTP.
+/* wget: fetch a page over HTTP or HTTPS.
  *
- * usage: wget http://host[:port]/path [file]
- * Saves the body to 'file', or prints it. HTTPS is not supported yet. */
+ * usage: wget http(s)://host[:port]/path [file]
+ * Saves the body to 'file', or prints it. HTTPS checks the certificate against the root list. */
 
 #include <ulib.h>
+#include <tls.h>
+
+static int secure;
+static int sock;
+
+static long net_read(void *b, size_t n) { return secure ? tls_read(b, n) : read(sock, b, n); }
+static long net_write(const void *b, size_t n) { return secure ? tls_write(b, n) : write(sock, b, n); }
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -11,14 +18,11 @@ int main(int argc, char **argv) {
         return 1;
     }
     const char *url = argv[1];
-    if (!strncmp(url, "https://", 8)) {
-        puts("wget: https is not supported yet (no TLS)");
-        return 1;
-    }
-    if (!strncmp(url, "http://", 7)) url += 7;
+    int port = 80;
+    if (!strncmp(url, "https://", 8)) { secure = 1; port = 443; url += 8; }
+    else if (!strncmp(url, "http://", 7)) url += 7;
 
     char host[96];
-    int port = 80;
     size_t n = 0;
     while (url[n] && url[n] != '/' && url[n] != ':' && n < sizeof(host) - 1) { host[n] = url[n]; n++; }
     host[n] = '\0';
@@ -31,16 +35,23 @@ int main(int argc, char **argv) {
         printf("wget: cannot resolve %s\n", host);
         return 1;
     }
-    int s = tcp_connect(ip, port);
-    if (s < 0) {
-        printf("wget: cannot connect to %s:%d (error %d)\n", host, port, -s);
-        return 1;
+    if (secure) {
+        if (tls_open(ip, port, host) < 0) {
+            printf("wget: TLS failed: %s\n", tls_error());
+            return 1;
+        }
+    } else {
+        sock = tcp_connect(ip, port);
+        if (sock < 0) {
+            printf("wget: cannot connect to %s:%d (error %d)\n", host, port, -sock);
+            return 1;
+        }
     }
 
     char req[512];
     int rl = snprintf(req, sizeof(req),
                       "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: loop-os-wget\r\nConnection: close\r\n\r\n", path, host);
-    if (write(s, req, (size_t)rl) < 0) {
+    if (net_write(req, (size_t)rl) < 0) {
         puts("wget: send failed");
         return 1;
     }
@@ -57,17 +68,22 @@ int main(int argc, char **argv) {
     /* Skip the header (up to a blank line) and report the status line */
     char buf[2048];
     char head[256];
-    int hlen = 0, in_body = 0;
+    int hlen = 0, in_body = 0, state = 0;
     long total = 0;
     for (;;) {
-        long r = read(s, buf, sizeof(buf));
+        long r = net_read(buf, sizeof(buf));
         if (r < 0) { printf("wget: read error %ld\n", -r); break; }
         if (r == 0) break;
         long start = 0;
         if (!in_body) {
             for (long i = 0; i < r; i++) {
                 if (hlen < (int)sizeof(head) - 1) head[hlen++] = buf[i];
-                if (hlen >= 4 && !memcmp(&head[hlen - 4], "\r\n\r\n", 4)) {
+                /* track the blank line separately: real headers are longer than 'head' */
+                char c = buf[i];
+                if (c == '\r') state = (state == 2) ? 3 : 1;
+                else if (c == '\n') state = (state == 1) ? 2 : (state == 3) ? 4 : 0;
+                else state = 0;
+                if (state == 4) {
                     in_body = 1;
                     start = i + 1;
                     break;
@@ -84,7 +100,8 @@ int main(int argc, char **argv) {
             total += r - start;
         }
     }
-    close(s);
+    if (secure && total == 0) printf("wget: no data (%s)\n", tls_error());
+    if (secure) tls_close(); else close(sock);
     if (argc > 2) {
         close(out);
         printf("saved %ld bytes to %s\n", total, argv[2]);

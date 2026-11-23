@@ -49,6 +49,7 @@
 #define SYS_PING        119  /* ping(ip, timeout_ms) -> round trip ms or < 0 */
 #define SYS_TCP_CONNECT 120  /* tcp_connect(ip, port) -> fd (read/write/close like a file) */
 #define SYS_KEYMAP      121  /* keymap(name or NULL) -> layout (0 us, 1 br); a name sets it */
+#define SYS_UNIXTIME    122  /* unixtime() -> seconds since 1970-01-01 (RTC read as UTC) */
 #define SYS_WALLTIME    115  /* walltime() -> hour*3600 + minute*60 + second */
 
 /* errno values used by the kernel */
