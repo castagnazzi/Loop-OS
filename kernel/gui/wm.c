@@ -30,7 +30,7 @@
 #define TASKBAR_H 36
 #define MENU_ITEM_H 30
 #define MENU_W 230
-#define MAX_MENU 12
+#define MAX_MENU 16
 #define START_X 4
 #define START_W 104
 
@@ -579,6 +579,16 @@ static void draw_icon(const char *name, int ix, int iy, int size) {
         ru(ix, iy, size, 2, 8, 12, 1, RGB(200, 225, 255));
         ru(ix, iy, size, 8, 1, 1, 14, RGB(200, 225, 255));
         ru(ix, iy, size, 5, 4, 6, 1, RGB(200, 225, 255)); ru(ix, iy, size, 5, 12, 6, 1, RGB(200, 225, 255));
+    } else if (!strcmp(name, "snake")) {
+        ru(ix, iy, size, 1, 1, 14, 14, RGB(16, 22, 40));
+        for (int k = 0; k < 5; k++) ru(ix, iy, size, 3 + k * 2, 11, 2, 2, RGB(70, 200, 110));
+        ru(ix, iy, size, 11, 7, 2, 6, RGB(70, 200, 110)); ru(ix, iy, size, 9, 5, 4, 2, RGB(130, 240, 150));
+        ru(ix, iy, size, 3, 3, 2, 2, RGB(240, 70, 70));
+    } else if (!strcmp(name, "xo")) {
+        ru(ix, iy, size, 1, 1, 14, 14, RGB(30, 34, 70));
+        ru(ix, iy, size, 6, 2, 1, 12, RGB(120, 130, 190)); ru(ix, iy, size, 10, 2, 1, 12, RGB(120, 130, 190));
+        ru(ix, iy, size, 2, 6, 12, 1, RGB(120, 130, 190)); ru(ix, iy, size, 2, 10, 12, 1, RGB(120, 130, 190));
+        ru(ix, iy, size, 2, 2, 3, 3, RGB(80, 195, 250)); ru(ix, iy, size, 11, 11, 3, 3, RGB(255, 112, 67));
     } else if (!strcmp(name, "image")) {
         ru(ix, iy, size, 1, 2, 14, 12, RGB(240, 242, 248));
         ru(ix, iy, size, 2, 3, 12, 10, RGB(110, 180, 240));

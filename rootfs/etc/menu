@@ -4,6 +4,8 @@ Bloco de Notas|/bin/notepad /tmp/nota.txt|note
 Arquivos|/bin/files /|files
 Calculadora|/bin/calc|calc
 Imagens|/bin/files /usr/imagens|image
+Cobrinha|/bin/cobrinha|snake
+Jogo da Velha 3D|/bin/velha|xo
 Gerenciador de Tarefas|/bin/taskmgr|tasks
 Navegador|/bin/navegador|web
 Rede|/bin/rede|net
